@@ -1,0 +1,11 @@
+{
+  "name": "OpenDownload",
+  "projectname": "OpenDownload",
+  "outputfilename": "opendownload",
+  "frontend": {
+    "dir": "client",
+    "command": "pnpm run dev",
+    "install": "pnpm install",
+    "build": "pnpm run build"
+  }
+}
