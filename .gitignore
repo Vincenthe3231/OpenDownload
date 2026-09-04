@@ -23,5 +23,5 @@ dist/
 Thumbs.db
 
 # Project-specific
-downloads/
+download/
 .state

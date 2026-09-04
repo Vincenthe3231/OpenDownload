@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/opendownload/opendownload/internal/downloader"
+	"github.com/opendownload/opendownload/internal/extractors"
 	"github.com/opendownload/opendownload/internal/parser"
 	"github.com/opendownload/opendownload/internal/util"
 	"github.com/spf13/cobra"
@@ -22,6 +23,7 @@ var (
 	headers         []string
 	cookie          string
 	cookieFile      string
+	browserCookies  string
 )
 
 var downloadCmd = &cobra.Command{
@@ -40,11 +42,44 @@ func init() {
 	downloadCmd.Flags().StringSliceVar(&headers, "header", []string{}, "custom headers (e.g. 'Referer: https://example.com')")
 	downloadCmd.Flags().StringVar(&cookie, "cookie", "", "cookie string (e.g. 'key=value; key2=value2')")
 	downloadCmd.Flags().StringVar(&cookieFile, "cookie-file", "", "Netscape formatted cookie file")
+	downloadCmd.Flags().StringVar(&browserCookies, "cookies-from-browser", "", "load cookies from browser (chrome|edge)")
 	rootCmd.AddCommand(downloadCmd)
 }
 
 func runDownload(cmd *cobra.Command, args []string) error {
 	url := args[0]
+	finalCookie := cookie
+	finalHeaders := parseHeaders(headers)
+	var detectedTitle string
+
+	// Attempt automatic extraction
+	if e := extractors.GetExtractor(url); e != nil {
+		fmt.Printf("Using extractor: %s\n", e.Name())
+		res, err := e.Extract(cmd.Context(), url)
+		if err == nil {
+			url = res.StreamURL
+			detectedTitle = res.Title
+			for k, v := range res.Headers {
+				finalHeaders[k] = v
+			}
+			if res.Cookies != "" {
+				finalCookie = res.Cookies
+			}
+		}
+	}
+
+	if browserCookies != "" {
+		host := util.GetHostFromURL(url)
+		if host != "" {
+			c, err := util.LoadCookiesFromBrowser(browserCookies, host)
+			if err == nil {
+				finalCookie = c
+				fmt.Printf("Loaded cookies for %s\n", host)
+			} else {
+				fmt.Printf("Warning: failed to load cookies: %v\n", err)
+			}
+		}
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -61,19 +96,38 @@ func runDownload(cmd *cobra.Command, args []string) error {
 		UserAgent:  userAgent,
 		ProxyURL:   proxyURL,
 		Verbose:    verbose,
-		Headers:    parseHeaders(headers),
-		Cookie:     cookie,
+		Headers:    finalHeaders,
+		Cookie:     finalCookie,
 		CookieFile: cookieFile,
 	})
 
 	streamType := detectStreamType(url)
+	
+	// Helper to resolve dynamic filename
+	resolveFilename := func(ext string) string {
+		if filename != "" {
+			return filename
+		}
+		if detectedTitle != "" {
+			return detectedTitle + ext
+		}
+		return util.FilenameFromURL(url)
+	}
+
+	// Ensure output directory exists
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory %s: %w", outputDir, err)
+	}
 
 	switch streamType {
 	case "hls":
+		filename = resolveFilename(".ts")
 		return downloadHLS(ctx, client, url)
 	case "dash":
+		filename = resolveFilename(".mp4")
 		return downloadDASH(ctx, client, url)
 	default:
+		filename = resolveFilename(filepath.Ext(util.FilenameFromURL(url)))
 		return downloadDirect(ctx, client, url)
 	}
 }
@@ -101,11 +155,7 @@ func detectStreamType(url string) string {
 }
 
 func downloadDirect(ctx context.Context, client *util.HTTPClient, url string) error {
-	outName := filename
-	if outName == "" {
-		outName = util.FilenameFromURL(url)
-	}
-	outPath := filepath.Join(outputDir, outName)
+	outPath := filepath.Join(outputDir, filename)
 
 	if !forceOverwrite {
 		if _, err := os.Stat(outPath); err == nil {
@@ -147,12 +197,7 @@ func downloadHLS(ctx context.Context, client *util.HTTPClient, url string) error
 		return downloadHLS(ctx, client, variant.URI)
 	}
 
-	outName := filename
-	if outName == "" {
-		outName = util.FilenameFromURL(url)
-		outName = strings.TrimSuffix(outName, filepath.Ext(outName)) + ".ts"
-	}
-	outPath := filepath.Join(outputDir, outName)
+	outPath := filepath.Join(outputDir, filename)
 
 	if !forceOverwrite {
 		if _, err := os.Stat(outPath); err == nil {
@@ -192,12 +237,7 @@ func downloadDASH(ctx context.Context, client *util.HTTPClient, url string) erro
 	fmt.Printf("Selected: %dx%d @ %d kbps\n",
 		rep.Width, rep.Height, rep.Bandwidth/1000)
 
-	outName := filename
-	if outName == "" {
-		outName = util.FilenameFromURL(url)
-		outName = strings.TrimSuffix(outName, filepath.Ext(outName)) + ".mp4"
-	}
-	outPath := filepath.Join(outputDir, outName)
+	outPath := filepath.Join(outputDir, filename)
 
 	if !forceOverwrite {
 		if _, err := os.Stat(outPath); err == nil {

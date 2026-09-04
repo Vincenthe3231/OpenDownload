@@ -73,7 +73,7 @@ func Execute() error {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVarP(&outputDir, "output", "o", ".", "output directory for downloads")
+	rootCmd.PersistentFlags().StringVarP(&outputDir, "output", "o", "./download", "output directory for downloads")
 	rootCmd.PersistentFlags().IntVarP(&workers, "workers", "w", 8, "number of concurrent download workers")
 	rootCmd.PersistentFlags().StringVarP(&userAgent, "user-agent", "U", "", "custom User-Agent string")
 	rootCmd.PersistentFlags().StringVarP(&proxyURL, "proxy", "x", "", "proxy URL (e.g. http://127.0.0.1:8080)")
