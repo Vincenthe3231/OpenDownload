@@ -1,0 +1,27 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Configuration and Keys
+*.key
+*.crt
+*.pem
+*.env
+.opendownload.yaml
+.config/
+
+# Build artifacts
+bin/
+tmp/
+dist/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Project-specific
+downloads/
+.state
