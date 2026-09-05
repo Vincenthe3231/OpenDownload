@@ -42,21 +42,34 @@ Inspect a URL before downloading:
 .\opendownload.exe info "https://example.com/playlist.m3u8"
 ```
 
-## Capture workflow
+## Firefox and Zen capture
 
-The current desktop client does not yet control the capture proxy. Use the CLI to discover streams, then paste the detected URL into the app or download it through the CLI.
+The desktop app can capture authorized media requests from Firefox or Zen without installing a local root certificate or intercepting TLS. It captures only the tab you select in the browser add on.
+
+1. Open `about:debugging#/runtime/this-firefox` in Firefox Developer Edition or Zen.
+2. Select **Load Temporary Add-on** and choose `extensions/firefox/manifest.json`.
+3. In the OpenDownload desktop app, find the **Detected streams** card and select **Start capture**.
+4. OpenDownload displays a long pairing code in that card. Select the copy icon beside it.
+5. Open the browser add on, paste that code into **Code from OpenDownload desktop app**, then select **Start capture** while the streaming tab is active.
+6. Play the media, then select a detected stream in OpenDownload to download it with the captured request context.
+
+The pairing code expires after five minutes. Cookie and authorization values remain in memory for the active desktop session, are not displayed or logged, and are cleared when capture stops or the app exits. The add on requests broad host access because streams can come from a separate CDN domain, but it records only the active tab you explicitly selected.
+
+## Proxy capture
+
+The CLI proxy remains available for advanced use cases:
 
 ```powershell
 .\opendownload.exe proxy run
 ```
 
-Set your browser proxy to `127.0.0.1:9000`, load the page, and play the media. For HTTPS interception, pass a trusted local certificate and key:
+Set your browser proxy to `127.0.0.1:9000`, load the page, and play the media. HTTPS request inspection requires a trusted local certificate and key:
 
 ```powershell
 .\opendownload.exe proxy run --ca-cert .\ca.crt --ca-key .\ca.key
 ```
 
-Only install a certificate you control, remove it when you no longer need it, and comply with the site terms and applicable law.
+Only install a certificate you control, remove it when you no longer need it, and comply with the site terms and applicable law. The Firefox and Zen add on path is the preferred desktop capture workflow because it preserves ordinary browser certificate verification.
 
 ## Requirements and development
 
@@ -81,8 +94,8 @@ Project layout:
 ## Current limitations
 
 - DASH downloads select the best video representation. Audio track merging is not implemented.
-- Capture proxy controls and live progress are CLI only.
-- Browser cookie import and custom headers are CLI only.
+- The Firefox and Zen add on is loaded temporarily for this initial release. Mozilla signing and public distribution are not included.
+- Browser cookie import and custom headers are CLI only for manual URL downloads.
 
 ## License
 

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/opendownload/opendownload/internal/capture"
 	"github.com/opendownload/opendownload/internal/downloader"
 	"github.com/opendownload/opendownload/internal/parser"
 	"github.com/opendownload/opendownload/internal/util"
@@ -15,12 +16,13 @@ import (
 
 // App struct
 type App struct {
-	ctx context.Context
+	ctx     context.Context
+	capture *capture.Manager
 }
 
 // NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{}
+	return &App{capture: capture.NewManager()}
 }
 
 // startup is called when the app starts. The context is saved
@@ -29,8 +31,42 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 }
 
+func (a *App) shutdown(context.Context) {
+	a.capture.Stop()
+}
+
 // Download downloads direct media, HLS playlists, or DASH manifests to outputDir.
 func (a *App) Download(url string, outputDir string) error {
+	return a.download(url, outputDir, nil)
+}
+
+func (a *App) StartFirefoxCapture() (capture.Pairing, error) {
+	return a.capture.Start()
+}
+
+func (a *App) StopFirefoxCapture() {
+	a.capture.Stop()
+}
+
+func (a *App) ListCapturedStreams() []capture.Stream {
+	return a.capture.List()
+}
+
+func (a *App) DownloadCapturedStream(id string, outputDir string) error {
+	stream, headers, ok := a.capture.Get(id)
+	if !ok {
+		return fmt.Errorf("captured stream is no longer available")
+	}
+	if err := a.download(stream.URL, outputDir, headers); err != nil {
+		if strings.Contains(err.Error(), "HTTP 401") || strings.Contains(err.Error(), "HTTP 403") {
+			return fmt.Errorf("stream access was rejected; capture a fresh request and try again: %w", err)
+		}
+		return err
+	}
+	return nil
+}
+
+func (a *App) download(url string, outputDir string, headers map[string]string) error {
 	url = strings.TrimSpace(url)
 	parsedURL, err := urlpkg.Parse(url)
 	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
@@ -42,6 +78,7 @@ func (a *App) Download(url string, outputDir string) error {
 
 	client := util.NewHTTPClient(util.HTTPClientConfig{
 		Verbose: false,
+		Headers: headers,
 	})
 
 	if outputDir == "" {

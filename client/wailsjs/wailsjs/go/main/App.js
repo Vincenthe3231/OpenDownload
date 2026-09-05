@@ -5,3 +5,19 @@
 export function Download(arg1, arg2) {
   return window['go']['main']['App']['Download'](arg1, arg2);
 }
+
+export function DownloadCapturedStream(arg1, arg2) {
+  return window['go']['main']['App']['DownloadCapturedStream'](arg1, arg2);
+}
+
+export function ListCapturedStreams() {
+  return window['go']['main']['App']['ListCapturedStreams']();
+}
+
+export function StartFirefoxCapture() {
+  return window['go']['main']['App']['StartFirefoxCapture']();
+}
+
+export function StopFirefoxCapture() {
+  return window['go']['main']['App']['StopFirefoxCapture']();
+}

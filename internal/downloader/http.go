@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -48,6 +49,9 @@ func (d *HTTPDownloader) downloadSingle(ctx context.Context, url, outPath string
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
+	}
 
 	file, err := os.Create(outPath)
 	if err != nil {
@@ -136,6 +140,9 @@ func (d *HTTPDownloader) downloadSegment(ctx context.Context, url, outPath strin
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
+	}
 
 	file, err := os.OpenFile(outPath, os.O_WRONLY, 0644)
 	if err != nil {
@@ -174,9 +181,9 @@ func (d *HTTPDownloader) downloadSegment(ctx context.Context, url, outPath strin
 }
 
 type progressWriter struct {
-	total    int64
-	written  atomic.Int64
-	start    time.Time
+	total   int64
+	written atomic.Int64
+	start   time.Time
 }
 
 func (p *progressWriter) Write(data []byte) (int, error) {
