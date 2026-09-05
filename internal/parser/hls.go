@@ -2,69 +2,20 @@ package parser
 
 import (
 	"bufio"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"strings"
 
-	"github.com/opendownload/opendownload/internal/util"
+	"github.com/opendownload/opendownload/internal/media"
 )
 
-type Resolution struct {
-	Width  int
-	Height int
-}
-
-type HLSEncryption struct {
-	Method string
-	URI    string
-	IV     string
-}
-
-type HLSSegment struct {
-	URI        string
-	Duration   float64
-	Title      string
-	ByteRange  *ByteRange
-	Encryption *HLSEncryption
-}
-
-type ByteRange struct {
-	Length int64
-	Offset int64
-}
-
-type HLSVariant struct {
-	URI        string
-	Bandwidth  int
-	Resolution Resolution
-	Codecs     string
-	FrameRate  float64
-	Audio      string
-	Subtitles  string
-}
-
-type HLSAudioTrack struct {
-	GroupID  string
-	Name     string
-	Language string
-	URI      string
-	Default  bool
-}
-
-type HLSPlaylist struct {
-	IsMaster       bool
-	Variants       []HLSVariant
-	AudioGroups    map[string][]HLSAudioTrack
-	Segments       []HLSSegment
-	TargetDuration float64
-	Encryption     *HLSEncryption
-	BaseURL        string
-}
-
+// ParseHLS parses a master or media playlist and resolves all relative URLs
+// against baseURL.
 func ParseHLS(data []byte, baseURL string) (*HLSPlaylist, error) {
 	content := string(data)
-	if !strings.Contains(content, "#EXTM3U") {
-		return nil, fmt.Errorf("not a valid M3U8 playlist")
+	if !strings.Contains(content, hlsHeaderTag) {
+		return nil, validationError("HLS playlist", "missing #EXTM3U header")
 	}
 
 	playlist := &HLSPlaylist{
@@ -72,24 +23,26 @@ func ParseHLS(data []byte, baseURL string) (*HLSPlaylist, error) {
 		AudioGroups: make(map[string][]HLSAudioTrack),
 	}
 
-	if strings.Contains(content, "#EXT-X-STREAM-INF") {
+	if strings.Contains(content, hlsStreamInfoTag) {
 		playlist.IsMaster = true
-		parseMasterPlaylist(playlist, content, baseURL)
-	} else {
-		parseMediaPlaylist(playlist, content, baseURL)
+		if err := parseMasterPlaylist(playlist, content, baseURL); err != nil {
+			return nil, err
+		}
+	} else if err := parseMediaPlaylist(playlist, content, baseURL); err != nil {
+		return nil, err
 	}
 
 	return playlist, nil
 }
 
-func parseMasterPlaylist(playlist *HLSPlaylist, content, baseURL string) {
-	scanner := bufio.NewScanner(strings.NewReader(content))
-
+func parseMasterPlaylist(playlist *HLSPlaylist, content, baseURL string) error {
+	scanner := newHLSScanner(content)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 
-		if strings.HasPrefix(line, "#EXT-X-STREAM-INF:") {
-			attrs := parseAttributes(strings.TrimPrefix(line, "#EXT-X-STREAM-INF:"))
+		switch {
+		case strings.HasPrefix(line, hlsStreamInfoTag):
+			attrs := parseAttributes(strings.TrimPrefix(line, hlsStreamInfoTag))
 			variant := HLSVariant{}
 
 			if bw, ok := attrs["BANDWIDTH"]; ok {
@@ -111,127 +64,160 @@ func parseMasterPlaylist(playlist *HLSPlaylist, content, baseURL string) {
 				variant.Subtitles = subs
 			}
 
-			if scanner.Scan() {
-				uri := strings.TrimSpace(scanner.Text())
-				if uri != "" && !strings.HasPrefix(uri, "#") {
-					variant.URI = util.ResolveURL(baseURL, uri)
-				}
+			if !scanner.Scan() {
+				return validationError("HLS variant", "missing playlist URI")
 			}
-
+			uri := strings.TrimSpace(scanner.Text())
+			if uri == "" || strings.HasPrefix(uri, "#") {
+				return validationError("HLS variant", "missing playlist URI")
+			}
+			variant.URI = media.ResolveURL(baseURL, uri)
 			playlist.Variants = append(playlist.Variants, variant)
-		}
 
-		if strings.HasPrefix(line, "#EXT-X-MEDIA:") {
-			attrs := parseAttributes(strings.TrimPrefix(line, "#EXT-X-MEDIA:"))
-			if attrs["TYPE"] == "AUDIO" {
-				track := HLSAudioTrack{
-					GroupID:  attrs["GROUP-ID"],
-					Name:     attrs["NAME"],
-					Language: attrs["LANGUAGE"],
-					Default:  attrs["DEFAULT"] == "YES",
-				}
-				if uri, ok := attrs["URI"]; ok {
-					track.URI = util.ResolveURL(baseURL, uri)
-				}
-				playlist.AudioGroups[track.GroupID] = append(playlist.AudioGroups[track.GroupID], track)
+		case strings.HasPrefix(line, hlsMediaTag):
+			attrs := parseAttributes(strings.TrimPrefix(line, hlsMediaTag))
+			if attrs["TYPE"] != "AUDIO" {
+				continue
 			}
+			track := HLSAudioTrack{
+				GroupID:  attrs["GROUP-ID"],
+				Name:     attrs["NAME"],
+				Language: attrs["LANGUAGE"],
+				Default:  attrs["DEFAULT"] == "YES",
+			}
+			if uri, ok := attrs["URI"]; ok {
+				track.URI = media.ResolveURL(baseURL, uri)
+			}
+			playlist.AudioGroups[track.GroupID] = append(playlist.AudioGroups[track.GroupID], track)
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read HLS master playlist: %w", err)
+	}
+	return nil
 }
 
-func parseMediaPlaylist(playlist *HLSPlaylist, content, baseURL string) {
-	scanner := bufio.NewScanner(strings.NewReader(content))
+func parseMediaPlaylist(playlist *HLSPlaylist, content, baseURL string) error {
+	scanner := newHLSScanner(content)
 	var currentEncryption *HLSEncryption
 	var segDuration float64
 	var segTitle string
+	var sequence int64
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 
-		if strings.HasPrefix(line, "#EXT-X-TARGETDURATION:") {
-			val := strings.TrimPrefix(line, "#EXT-X-TARGETDURATION:")
-			playlist.TargetDuration, _ = strconv.ParseFloat(val, 64)
-		}
-
-		if strings.HasPrefix(line, "#EXT-X-KEY:") {
-			attrs := parseAttributes(strings.TrimPrefix(line, "#EXT-X-KEY:"))
-			method := attrs["METHOD"]
-			if method == "NONE" {
-				currentEncryption = nil
-			} else {
-				enc := &HLSEncryption{
-					Method: method,
-					IV:     attrs["IV"],
-				}
-				if uri, ok := attrs["URI"]; ok {
-					enc.URI = util.ResolveURL(baseURL, uri)
-				}
-				currentEncryption = enc
-				if playlist.Encryption == nil {
-					playlist.Encryption = enc
-				}
+		switch {
+		case strings.HasPrefix(line, hlsTargetDurationTag):
+			value := strings.TrimSpace(strings.TrimPrefix(line, hlsTargetDurationTag))
+			duration, err := strconv.ParseFloat(value, 64)
+			if err != nil || duration < 0 {
+				return validationError("HLS target duration", "must be a nonnegative number")
 			}
-		}
+			playlist.TargetDuration = duration
 
-		if strings.HasPrefix(line, "#EXTINF:") {
-			val := strings.TrimPrefix(line, "#EXTINF:")
-			parts := strings.SplitN(val, ",", 2)
-			segDuration, _ = strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+		case strings.HasPrefix(line, hlsMediaSequenceTag):
+			value := strings.TrimSpace(strings.TrimPrefix(line, hlsMediaSequenceTag))
+			parsed, err := strconv.ParseInt(value, 10, 64)
+			if err != nil || parsed < 0 {
+				return validationError("HLS media sequence", "must be a nonnegative integer")
+			}
+			sequence = parsed
+			playlist.MediaSequence = parsed
+
+		case strings.HasPrefix(line, hlsKeyTag):
+			enc, err := parseHLSEncryption(strings.TrimPrefix(line, hlsKeyTag), baseURL)
+			if err != nil {
+				return err
+			}
+			currentEncryption = enc
+			if playlist.Encryption == nil && enc != nil {
+				playlist.Encryption = enc
+			}
+
+		case strings.HasPrefix(line, hlsInfoTag):
+			value := strings.TrimPrefix(line, hlsInfoTag)
+			parts := strings.SplitN(value, ",", 2)
+			duration, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+			if err != nil || duration < 0 {
+				return validationError("HLS segment duration", "must be a nonnegative number")
+			}
+			segDuration = duration
+			segTitle = ""
 			if len(parts) > 1 {
 				segTitle = strings.TrimSpace(parts[1])
 			}
-		}
 
-		if line != "" && !strings.HasPrefix(line, "#") {
-			seg := HLSSegment{
-				URI:        util.ResolveURL(baseURL, line),
+		case line != "" && !strings.HasPrefix(line, "#"):
+			playlist.Segments = append(playlist.Segments, HLSSegment{
+				URI:        media.ResolveURL(baseURL, line),
 				Duration:   segDuration,
 				Title:      segTitle,
 				Encryption: currentEncryption,
-			}
-			playlist.Segments = append(playlist.Segments, seg)
+				Sequence:   sequence,
+			})
+			sequence++
 			segDuration = 0
 			segTitle = ""
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read HLS media playlist: %w", err)
+	}
+	return nil
 }
 
-func parseAttributes(s string) map[string]string {
-	attrs := make(map[string]string)
-	var key, value string
-	inQuote := false
-	state := 0 // 0=key, 1=value
-
-	for i := 0; i < len(s); i++ {
-		ch := s[i]
-		switch {
-		case ch == '=' && state == 0:
-			state = 1
-		case ch == '"':
-			inQuote = !inQuote
-		case ch == ',' && !inQuote:
-			attrs[strings.TrimSpace(key)] = strings.TrimSpace(value)
-			key = ""
-			value = ""
-			state = 0
-		case state == 0:
-			key += string(ch)
-		case state == 1:
-			value += string(ch)
+func parseHLSEncryption(value, baseURL string) (*HLSEncryption, error) {
+	attrs := parseAttributes(value)
+	method := strings.ToUpper(strings.TrimSpace(attrs["METHOD"]))
+	switch method {
+	case hlsEncryptionNone:
+		return nil, nil
+	case hlsEncryptionAES128:
+	default:
+		if method == "" {
+			return nil, validationError("HLS encryption", "missing METHOD")
 		}
+		return nil, validationError("HLS encryption", fmt.Sprintf("unsupported method %q", method))
 	}
-	if key != "" {
-		attrs[strings.TrimSpace(key)] = strings.TrimSpace(value)
+
+	if keyFormat, ok := attrs["KEYFORMAT"]; ok && !strings.EqualFold(keyFormat, hlsIdentityKeyFormat) {
+		return nil, validationError("HLS encryption", fmt.Sprintf("unsupported key format %q", keyFormat))
 	}
-	return attrs
+	keyURI := strings.TrimSpace(attrs["URI"])
+	if keyURI == "" {
+		return nil, validationError("HLS encryption", "AES 128 requires a key URI")
+	}
+	iv := strings.TrimSpace(attrs["IV"])
+	if err := validateHLSIV(iv); err != nil {
+		return nil, err
+	}
+	return &HLSEncryption{
+		Method: method,
+		URI:    media.ResolveURL(baseURL, keyURI),
+		IV:     iv,
+	}, nil
 }
 
-func parseResolution(s string) Resolution {
-	parts := strings.SplitN(s, "x", 2)
-	if len(parts) != 2 {
-		return Resolution{}
+func validateHLSIV(iv string) error {
+	if iv == "" {
+		return nil
 	}
-	w, _ := strconv.Atoi(parts[0])
-	h, _ := strconv.Atoi(parts[1])
-	return Resolution{Width: w, Height: h}
+	if !strings.HasPrefix(iv, "0x") && !strings.HasPrefix(iv, "0X") {
+		return validationError("HLS encryption IV", "must use a 0x hexadecimal prefix")
+	}
+	encoded := iv[2:]
+	if len(encoded) != hlsIVByteLength*2 {
+		return validationError("HLS encryption IV", "must be exactly 16 bytes")
+	}
+	if _, err := hex.DecodeString(encoded); err != nil {
+		return validationError("HLS encryption IV", "must contain valid hexadecimal bytes")
+	}
+	return nil
+}
+
+func newHLSScanner(content string) *bufio.Scanner {
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	scanner.Buffer(make([]byte, 4*1024), 1024*1024)
+	return scanner
 }

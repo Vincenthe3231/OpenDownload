@@ -1,12 +1,4 @@
-const allowedHeaders = new Set([
-  'accept',
-  'accept-language',
-  'authorization',
-  'cookie',
-  'origin',
-  'referer',
-  'user-agent',
-]);
+importScripts('constants.js');
 
 let capture = null;
 const pending = new Map();
@@ -20,15 +12,34 @@ function normalizePairingCode(value) {
   return { endpoint: endpoint.replace(/\/$/, ''), token };
 }
 
+function pathnameFromURL(value) {
+  try {
+    return new URL(value).pathname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function extensionFromPathname(pathname) {
+  const match = pathname.match(/\.([a-z0-9]+)$/);
+  return match ? match[1] : '';
+}
+
+function isMediaFragment(pathname, contentType) {
+  const extension = extensionFromPathname(pathname);
+  return CaptureConstants.fragmentExtensions.has(extension) || contentType.includes('iso.segment') || contentType.includes('mp2t');
+}
+
 function mediaType(url, headers) {
   const contentType = (headers.find((header) => header.name.toLowerCase() === 'content-type') || {}).value || '';
   const normalized = contentType.toLowerCase();
-  const pathname = new URL(url).pathname.toLowerCase();
+  const pathname = pathnameFromURL(url);
+  if (!pathname || isMediaFragment(pathname, normalized)) return '';
   if (normalized.includes('mpegurl') || pathname.endsWith('.m3u8')) return 'hls';
   if (normalized.includes('dash+xml') || pathname.endsWith('.mpd')) return 'dash';
   if (normalized.startsWith('video/')) return 'video';
   if (normalized.startsWith('audio/')) return 'audio';
-  if (/\.(mp4|webm|mkv|mov|ts|m4s|mp3|m4a|aac|opus)$/.test(pathname)) return 'video';
+  if (CaptureConstants.directMediaExtensions.has(extensionFromPathname(pathname))) return 'video';
   return '';
 }
 
@@ -36,30 +47,39 @@ function selectedHeaders(headers) {
   const result = {};
   for (const header of headers || []) {
     const key = header.name.toLowerCase();
-    if (allowedHeaders.has(key) && header.value) result[header.name] = header.value;
+    if (CaptureConstants.allowedRequestHeaders.has(key) && header.value) result[header.name] = header.value;
   }
   return result;
 }
 
 async function sendCapture(request, type) {
-  if (!capture) return;
-  const response = await fetch(`${capture.endpoint}/v1/firefox/streams`, {
+  const session = capture;
+  if (!session) return;
+  const response = await fetch(`${session.endpoint}/v1/firefox/streams`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      OpenDownloadSession: capture.token,
+      OpenDownloadSession: session.token,
     },
     body: JSON.stringify({ url: request.url, type, headers: request.headers }),
   });
-  if (!response.ok) {
-    capture.error = response.status === 401 ? 'Pairing expired. Start capture again in OpenDownload.' : 'OpenDownload did not accept the stream.';
+  if (!response.ok && capture === session) {
+    session.error = response.status === 401 ? 'Pairing expired. Start capture again in OpenDownload.' : 'OpenDownload did not accept the stream.';
   }
+}
+
+function rememberRequest(requestID, request) {
+  if (pending.size >= CaptureConstants.maxPendingRequests) {
+    const oldestRequestID = pending.keys().next().value;
+    if (oldestRequestID !== undefined) pending.delete(oldestRequestID);
+  }
+  pending.set(requestID, request);
 }
 
 browser.webRequest.onSendHeaders.addListener(
   (details) => {
     if (!capture || details.tabId !== capture.tabId) return;
-    pending.set(details.requestId, { url: details.url, headers: selectedHeaders(details.requestHeaders) });
+    rememberRequest(details.requestId, { url: details.url, headers: selectedHeaders(details.requestHeaders) });
   },
   { urls: ['<all_urls>'] },
   ['requestHeaders'],
@@ -71,7 +91,9 @@ browser.webRequest.onHeadersReceived.addListener(
     pending.delete(details.requestId);
     if (!capture || !request || details.tabId !== capture.tabId || details.statusCode < 200 || details.statusCode >= 300) return;
     const type = mediaType(request.url, details.responseHeaders || []);
-    if (type) sendCapture(request, type).catch(() => { capture.error = 'Could not send the stream to OpenDownload.'; });
+    if (type) sendCapture(request, type).catch(() => {
+      if (capture) capture.error = 'Could not send the stream to OpenDownload.';
+    });
   },
   { urls: ['<all_urls>'] },
   ['responseHeaders'],

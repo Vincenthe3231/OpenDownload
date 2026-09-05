@@ -6,16 +6,18 @@ import (
 	"sync"
 )
 
+// MediaType classifies a detected downloadable media request.
 type MediaType string
 
 const (
-	MediaTypeVideo    MediaType = "video"
-	MediaTypeAudio    MediaType = "audio"
-	MediaTypeHLS      MediaType = "hls"
-	MediaTypeDASH     MediaType = "dash"
-	MediaTypeUnknown  MediaType = "media"
+	MediaTypeVideo   MediaType = "video"
+	MediaTypeAudio   MediaType = "audio"
+	MediaTypeHLS     MediaType = "hls"
+	MediaTypeDASH    MediaType = "dash"
+	MediaTypeUnknown MediaType = "media"
 )
 
+// DetectedMedia contains public request metadata emitted by the proxy detector.
 type DetectedMedia struct {
 	URL         string
 	Type        string
@@ -24,50 +26,83 @@ type DetectedMedia struct {
 	Source      string
 }
 
+// MediaDetector deduplicates recent media without blocking proxy requests.
 type MediaDetector struct {
 	mediaCh chan DetectedMedia
-	seen    sync.Map
+	mu      sync.Mutex
+	seen    map[string]struct{}
+	order   []string
+	closed  bool
 }
 
+// NewMediaDetector creates a detector with bounded memory and event buffering.
 func NewMediaDetector() *MediaDetector {
 	return &MediaDetector{
-		mediaCh: make(chan DetectedMedia, 100),
+		mediaCh: make(chan DetectedMedia, detectorBufferSize),
+		seen:    make(map[string]struct{}),
 	}
 }
 
+// MediaChannel returns the asynchronous stream of detected media.
 func (d *MediaDetector) MediaChannel() <-chan DetectedMedia {
 	return d.mediaCh
 }
 
+// Close closes the event stream once.
 func (d *MediaDetector) Close() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.closed {
+		return
+	}
+	d.closed = true
 	close(d.mediaCh)
 }
 
+// Inspect classifies a response and queues it when capacity is available.
 func (d *MediaDetector) Inspect(reqURL string, contentType string, contentLength int64) {
 	if d.shouldIgnore(reqURL) {
 		return
 	}
-
 	mediaType := d.detectType(reqURL, contentType)
 	if mediaType == "" {
 		return
 	}
 
-	if _, loaded := d.seen.LoadOrStore(reqURL, true); loaded {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.closed {
 		return
 	}
-
-	d.mediaCh <- DetectedMedia{
+	if _, exists := d.seen[reqURL]; exists {
+		return
+	}
+	media := DetectedMedia{
 		URL:         reqURL,
 		Type:        mediaType,
 		ContentType: contentType,
 		Size:        contentLength,
 	}
+	select {
+	case d.mediaCh <- media:
+		d.rememberLocked(reqURL)
+	default:
+		return
+	}
+}
+
+func (d *MediaDetector) rememberLocked(rawURL string) {
+	if len(d.order) == maxSeenMedia {
+		oldest := d.order[0]
+		d.order = d.order[1:]
+		delete(d.seen, oldest)
+	}
+	d.seen[rawURL] = struct{}{}
+	d.order = append(d.order, rawURL)
 }
 
 func (d *MediaDetector) detectType(rawURL, contentType string) string {
 	ct := strings.ToLower(contentType)
-
 	if strings.HasPrefix(ct, "video/") {
 		return string(MediaTypeVideo)
 	}
@@ -86,7 +121,6 @@ func (d *MediaDetector) detectType(rawURL, contentType string) string {
 		return ""
 	}
 	path := strings.ToLower(parsed.Path)
-
 	switch {
 	case strings.HasSuffix(path, ".m3u8"):
 		return string(MediaTypeHLS)
@@ -109,32 +143,12 @@ func (d *MediaDetector) detectType(rawURL, contentType string) string {
 		strings.HasSuffix(path, ".m4a"):
 		return string(MediaTypeAudio)
 	}
-
 	return ""
 }
 
 func (d *MediaDetector) shouldIgnore(rawURL string) bool {
 	lower := strings.ToLower(rawURL)
-
-	ignorePatterns := []string{
-		"google-analytics.com",
-		"googletagmanager.com",
-		"facebook.com/tr",
-		"doubleclick.net",
-		".gif",
-		".png",
-		".jpg",
-		".jpeg",
-		".svg",
-		".ico",
-		".css",
-		".js",
-		".woff",
-		".woff2",
-		".ttf",
-	}
-
-	for _, pattern := range ignorePatterns {
+	for _, pattern := range ignoredURLPatterns {
 		if strings.Contains(lower, pattern) {
 			return true
 		}

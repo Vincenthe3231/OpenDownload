@@ -33,9 +33,8 @@ export namespace capture {
 		    return a;
 		}
 	}
-	export class Stream {
+	export class StreamSummary {
 	    id: string;
-	    url: string;
 	    host: string;
 	    name: string;
 	    type: string;
@@ -43,13 +42,12 @@ export namespace capture {
 	    capturedAt: any;
 	
 	    static createFrom(source: any = {}) {
-	        return new Stream(source);
+	        return new StreamSummary(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
-	        this.url = source["url"];
 	        this.host = source["host"];
 	        this.name = source["name"];
 	        this.type = source["type"];
@@ -73,6 +71,86 @@ export namespace capture {
 		    }
 		    return a;
 		}
+	}
+
+}
+
+export namespace download {
+	
+	export class JobSnapshot {
+	    id: string;
+	    name: string;
+	    outputPath: string;
+	    status: string;
+	    downloadedBytes: number;
+	    totalBytes: number;
+	    completedUnits: number;
+	    totalUnits: number;
+	    bytesPerSecond: number;
+	    etaSeconds: number;
+	    hasEta: boolean;
+	    activeConnections: number;
+	    message?: string;
+	    version: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new JobSnapshot(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.outputPath = source["outputPath"];
+	        this.status = source["status"];
+	        this.downloadedBytes = source["downloadedBytes"];
+	        this.totalBytes = source["totalBytes"];
+	        this.completedUnits = source["completedUnits"];
+	        this.totalUnits = source["totalUnits"];
+	        this.bytesPerSecond = source["bytesPerSecond"];
+	        this.etaSeconds = source["etaSeconds"];
+	        this.hasEta = source["hasEta"];
+	        this.activeConnections = source["activeConnections"];
+	        this.message = source["message"];
+	        this.version = source["version"];
+	    }
+	}
+
+}
+
+export namespace main {
+	
+	export class CapturedDownloadRequest {
+	    id: string;
+	    capturedStreamId: string;
+	    outputDir: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CapturedDownloadRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.capturedStreamId = source["capturedStreamId"];
+	        this.outputDir = source["outputDir"];
+	    }
+	}
+	export class DownloadRequest {
+	    id: string;
+	    url: string;
+	    outputDir: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DownloadRequest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.url = source["url"];
+	        this.outputDir = source["outputDir"];
+	    }
 	}
 
 }

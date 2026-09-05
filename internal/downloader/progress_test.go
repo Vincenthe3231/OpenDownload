@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/opendownload/opendownload/internal/parser"
-	"github.com/opendownload/opendownload/internal/util"
+	"github.com/opendownload/opendownload/internal/transport"
 )
 
 func TestHTTPDownloaderReportsByteProgress(t *testing.T) {
@@ -26,7 +26,7 @@ func TestHTTPDownloaderReportsByteProgress(t *testing.T) {
 
 	updates, callback := collectProgress()
 	path := filepath.Join(t.TempDir(), "video.mp4")
-	client := util.NewHTTPClient(util.HTTPClientConfig{})
+	client := transport.NewHTTPClient(transport.HTTPClientConfig{})
 	err := NewHTTPDownloader(client, HTTPDownloaderConfig{Workers: 1, OnProgress: callback}).Download(context.Background(), server.URL, path)
 	if err != nil {
 		t.Fatalf("download failed: %v", err)
@@ -53,7 +53,7 @@ func TestHLSDownloaderReportsSegmentProgress(t *testing.T) {
 		{URI: server.URL + "/1"},
 	}}
 	path := filepath.Join(t.TempDir(), "video.ts")
-	client := util.NewHTTPClient(util.HTTPClientConfig{})
+	client := transport.NewHTTPClient(transport.HTTPClientConfig{})
 	err := NewHLSDownloader(client, HLSDownloaderConfig{Workers: 1, OnProgress: callback}).Download(context.Background(), playlist, path)
 	if err != nil {
 		t.Fatalf("download failed: %v", err)
@@ -72,7 +72,7 @@ func TestDASHDownloaderReportsSegmentProgress(t *testing.T) {
 		{URL: server.URL + "/1"},
 	}}
 	path := filepath.Join(t.TempDir(), "video.mp4")
-	client := util.NewHTTPClient(util.HTTPClientConfig{})
+	client := transport.NewHTTPClient(transport.HTTPClientConfig{})
 	err := NewDASHDownloader(client, DASHDownloaderConfig{Workers: 1, OnProgress: callback}).Download(context.Background(), representation, path)
 	if err != nil {
 		t.Fatalf("download failed: %v", err)

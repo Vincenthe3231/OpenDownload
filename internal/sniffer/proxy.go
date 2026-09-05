@@ -2,7 +2,6 @@ package sniffer
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -12,56 +11,62 @@ import (
 	"time"
 )
 
+// ProxyConfig configures the local media detector proxy.
 type ProxyConfig struct {
 	Port     int
-	CACert   string
-	CAKey    string
 	Verbose  bool
 	Detector *MediaDetector
 }
 
+// Proxy is a loopback only HTTP proxy that tunnels HTTPS without interception.
 type Proxy struct {
 	config ProxyConfig
 	server *http.Server
 }
 
+// NewProxy creates a loopback only proxy.
 func NewProxy(config ProxyConfig) (*Proxy, error) {
-	p := &Proxy{config: config}
-
-	mux := http.NewServeMux()
-	p.server = &http.Server{
-		Addr:    fmt.Sprintf(":%d", config.Port),
-		Handler: p,
+	if config.Detector == nil {
+		return nil, fmt.Errorf("media detector is required")
 	}
-	_ = mux
-
-	return p, nil
+	if config.Port < 0 || config.Port > 65535 {
+		return nil, fmt.Errorf("proxy port must be between 0 and 65535")
+	}
+	address := net.JoinHostPort(loopbackHost, strconv.Itoa(config.Port))
+	return &Proxy{
+		config: config,
+		server: &http.Server{
+			Addr:    address,
+			Handler: nil,
+		},
+	}, nil
 }
 
+// Start serves until the context is cancelled.
 func (p *Proxy) Start(ctx context.Context) error {
-	ln, err := net.Listen("tcp", p.server.Addr)
+	listener, err := net.Listen("tcp", p.server.Addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen: %w", err)
 	}
-
+	p.server.Handler = p
 	go func() {
 		<-ctx.Done()
-		p.server.Close()
+		_ = p.server.Close()
 	}()
 
-	err = p.server.Serve(ln)
+	err = p.server.Serve(listener)
 	if err == http.ErrServerClosed {
 		return nil
 	}
 	return err
 }
 
+// ServeHTTP forwards plain HTTP requests and tunnels CONNECT requests.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodConnect {
 		p.handleConnect(w, r)
 		return
 	}
-
 	p.handleHTTP(w, r)
 }
 
@@ -76,7 +81,6 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-
 	copyHeaders(outReq.Header, r.Header)
 	outReq.Header.Del("Proxy-Connection")
 	outReq.Header.Del("Proxy-Authorization")
@@ -87,25 +91,22 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 			return http.ErrUseLastResponse
 		},
 	}
-
-	resp, err := client.Do(outReq)
+	response, err := client.Do(outReq)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer response.Body.Close()
 
-	contentType := resp.Header.Get("Content-Type")
-	contentLength, _ := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
-	p.config.Detector.Inspect(targetURL, contentType, contentLength)
-
-	copyHeaders(w.Header(), resp.Header)
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	contentLength, _ := strconv.ParseInt(response.Header.Get("Content-Length"), 10, 64)
+	p.config.Detector.Inspect(targetURL, response.Header.Get("Content-Type"), contentLength)
+	copyHeaders(w.Header(), response.Header)
+	w.WriteHeader(response.StatusCode)
+	_, _ = io.Copy(w, response.Body)
 }
 
 func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
-	destConn, err := net.DialTimeout("tcp", r.Host, 10*time.Second)
+	destination, err := net.DialTimeout("tcp", r.Host, 10*time.Second)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -113,88 +114,36 @@ func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
-		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
-		destConn.Close()
+		http.Error(w, "hijacking not supported", http.StatusInternalServerError)
+		_ = destination.Close()
 		return
 	}
-
-	clientConn, _, err := hijacker.Hijack()
+	client, _, err := hijacker.Hijack()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		destConn.Close()
+		_ = destination.Close()
 		return
 	}
 
-	clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
-
-	if p.config.CACert != "" && p.config.CAKey != "" {
-		p.handleMITM(clientConn, destConn, r.Host)
+	if _, err := client.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n")); err != nil {
+		_ = client.Close()
+		_ = destination.Close()
 		return
 	}
-
-	go transfer(destConn, clientConn)
-	go transfer(clientConn, destConn)
+	go transfer(destination, client)
+	go transfer(client, destination)
 }
 
-func (p *Proxy) handleMITM(clientConn, destConn net.Conn, host string) {
-	defer clientConn.Close()
-	defer destConn.Close()
-
-	cert, err := tls.LoadX509KeyPair(p.config.CACert, p.config.CAKey)
-	if err != nil {
-		if p.config.Verbose {
-			fmt.Printf("MITM cert error for %s: %v\n", host, err)
-		}
-		go transfer(destConn, clientConn)
-		transfer(clientConn, destConn)
-		return
-	}
-
-	hostname := host
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		hostname = h
-	}
-
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		ServerName:   hostname,
-	}
-
-	tlsClientConn := tls.Server(clientConn, tlsConfig)
-	if err := tlsClientConn.Handshake(); err != nil {
-		if p.config.Verbose {
-			fmt.Printf("TLS handshake failed for %s: %v\n", host, err)
-		}
-		return
-	}
-	defer tlsClientConn.Close()
-
-	tlsDestConfig := &tls.Config{
-		ServerName: hostname,
-	}
-	tlsDestConn := tls.Client(destConn, tlsDestConfig)
-	if err := tlsDestConn.Handshake(); err != nil {
-		if p.config.Verbose {
-			fmt.Printf("TLS upstream handshake failed for %s: %v\n", host, err)
-		}
-		return
-	}
-	defer tlsDestConn.Close()
-
-	go transfer(tlsDestConn, tlsClientConn)
-	transfer(tlsClientConn, tlsDestConn)
+func transfer(destination io.WriteCloser, source io.ReadCloser) {
+	defer destination.Close()
+	defer source.Close()
+	_, _ = io.Copy(destination, source)
 }
 
-func transfer(dest io.WriteCloser, src io.ReadCloser) {
-	defer dest.Close()
-	defer src.Close()
-	io.Copy(dest, src)
-}
-
-func copyHeaders(dst, src http.Header) {
-	for k, vv := range src {
-		for _, v := range vv {
-			dst.Add(k, v)
+func copyHeaders(destination, source http.Header) {
+	for key, values := range source {
+		for _, value := range values {
+			destination.Add(key, value)
 		}
 	}
 }

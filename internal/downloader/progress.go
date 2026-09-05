@@ -5,10 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opendownload/opendownload/internal/util"
+	"github.com/opendownload/opendownload/internal/media"
 )
-
-const progressInterval = 250 * time.Millisecond
 
 // Progress describes the current transfer state for a download.
 type Progress struct {
@@ -106,12 +104,12 @@ func (r *progressReporter) finish() {
 
 func printProgress(update Progress) {
 	if update.TotalUnits > 0 {
-		fmt.Printf("\r  Segments: %d/%d (%.1f%%) @ %s/s   ", update.CompletedUnits, update.TotalUnits, float64(update.CompletedUnits)/float64(update.TotalUnits)*100, util.FormatBytes(int64(update.BytesPerSecond)))
+		fmt.Printf("\r  Segments: %d/%d (%.1f%%) @ %s/s   ", update.CompletedUnits, update.TotalUnits, float64(update.CompletedUnits)/float64(update.TotalUnits)*100, media.FormatBytes(int64(update.BytesPerSecond)))
 		return
 	}
 	if update.TotalBytes > 0 {
-		fmt.Printf("\r  %s / %s (%.1f%%) @ %s/s   ", util.FormatBytes(update.DownloadedBytes), util.FormatBytes(update.TotalBytes), float64(update.DownloadedBytes)/float64(update.TotalBytes)*100, util.FormatBytes(int64(update.BytesPerSecond)))
+		fmt.Printf("\r  %s / %s (%.1f%%) @ %s/s   ", media.FormatBytes(update.DownloadedBytes), media.FormatBytes(update.TotalBytes), float64(update.DownloadedBytes)/float64(update.TotalBytes)*100, media.FormatBytes(int64(update.BytesPerSecond)))
 		return
 	}
-	fmt.Printf("\r  %s @ %s/s   ", util.FormatBytes(update.DownloadedBytes), util.FormatBytes(int64(update.BytesPerSecond)))
+	fmt.Printf("\r  %s @ %s/s   ", media.FormatBytes(update.DownloadedBytes), media.FormatBytes(int64(update.BytesPerSecond)))
 }

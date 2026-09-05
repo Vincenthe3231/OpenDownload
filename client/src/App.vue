@@ -1,16 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { useTheme } from './composables/useTheme';
+import { useTheme } from './features/theme/useTheme';
 import { ArrowDownTrayIcon, LinkIcon, MoonIcon, SunIcon } from '@heroicons/vue/24/outline';
-import DownloadQueue from './components/DownloadQueue.vue';
-import SnifferPanel from './components/SnifferPanel.vue';
-import { useQueueStore, type DownloadDestinationEvent, type DownloadProgressEvent, type DownloadStateEvent } from './store/queue';
-import { useDownloadEngine } from './composables/useDownload';
-import { EventsOn } from '../wailsjs/wailsjs/runtime/runtime';
+import DownloadQueue from './features/downloads/components/DownloadQueue.vue';
+import SnifferPanel from './features/capture/components/SnifferPanel.vue';
+import { queueDownload } from './features/downloads/api';
+import { subscribeToDownloadEvents, type DownloadEventSubscription } from './features/downloads/events';
+import { useDownloadStore } from './features/downloads/store';
 
 const { isDark, toggleTheme } = useTheme();
-const queue = useQueueStore();
-const { queueDownload } = useDownloadEngine();
+const downloads = useDownloadStore();
 const sourceUrl = ref('');
 const outputPath = ref('');
 const error = ref('');
@@ -20,37 +19,45 @@ const isReady = computed(() => sourceUrl.value.trim().length > 0 && !isSubmittin
 async function submitDownload() {
   error.value = '';
   const url = sourceUrl.value.trim();
-  try { new URL(url); } catch { error.value = 'Paste a complete http or https media URL.'; return; }
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('unsupported protocol');
+    }
+  } catch {
+    error.value = 'Paste a complete http or https media URL.';
+    return;
+  }
   const id = crypto.randomUUID();
-  const name = new URL(url).pathname.split('/').filter(Boolean).pop() || 'download';
-  queue.addDownload({ id, name });
   isSubmitting.value = true;
   try {
-    await queueDownload(id, url, outputPath.value.trim());
+    downloads.apply(await queueDownload({ id, url, outputDir: outputPath.value.trim() }));
     sourceUrl.value = '';
   } catch (reason) {
-    queue.updateDownload(id, { progress: 0, status: 'failed' });
     error.value = reason instanceof Error ? reason.message : 'The download could not be started.';
-  } finally { isSubmitting.value = false; }
+  } finally {
+    isSubmitting.value = false;
+  }
 }
 
-let stopProgressListener: (() => void) | undefined;
-let stopStateListener: (() => void) | undefined;
-let stopDestinationListener: (() => void) | undefined;
+let eventSubscription: DownloadEventSubscription | undefined;
 onMounted(() => {
-  stopProgressListener = EventsOn('download:progress', (progress: DownloadProgressEvent) => queue.updateProgress(progress));
-	stopStateListener = EventsOn('download:state', (state: DownloadStateEvent) => queue.updateState(state));
-	stopDestinationListener = EventsOn('download:destination', (destination: DownloadDestinationEvent) => queue.updateDestination(destination));
+  eventSubscription = subscribeToDownloadEvents(downloads);
+  void eventSubscription.hydrate().catch(() => {
+    error.value = 'Could not restore current downloads.';
+  });
 });
-onBeforeUnmount(() => { stopProgressListener?.(); stopStateListener?.(); stopDestinationListener?.(); });
+onBeforeUnmount(() => {
+  eventSubscription?.dispose();
+});
 </script>
 
 <template>
   <div class="app-shell">
     <header class="app-header">
       <div class="brand"><span class="brand-mark"><ArrowDownTrayIcon aria-hidden="true" /></span><div><p class="eyebrow">MEDIA UTILITY</p><h1>OpenDownload</h1></div></div>
-      <button @click="toggleTheme" class="icon-button" :aria-label="isDark() ? 'Use light theme' : 'Use dark theme'">
-        <SunIcon v-if="isDark()" aria-hidden="true" /><MoonIcon v-else aria-hidden="true" />
+      <button @click="toggleTheme" class="icon-button" :aria-label="isDark ? 'Use light theme' : 'Use dark theme'">
+        <SunIcon v-if="isDark" aria-hidden="true" /><MoonIcon v-else aria-hidden="true" />
       </button>
     </header>
 

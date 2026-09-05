@@ -5,21 +5,18 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 
-	"github.com/opendownload/opendownload/internal/downloader"
+	"github.com/opendownload/opendownload/internal/download"
+	"github.com/opendownload/opendownload/internal/media"
 	"github.com/opendownload/opendownload/internal/sniffer"
-	"github.com/opendownload/opendownload/internal/util"
 	"github.com/spf13/cobra"
 )
 
 var (
 	sniffPort         int
 	sniffAutoDownload bool
-	caCertPath        string
-	caKeyPath         string
 )
 
 var sniffCmd = &cobra.Command{
@@ -55,8 +52,6 @@ func init() {
 func addProxyRunFlags(cmd *cobra.Command) {
 	cmd.Flags().IntVarP(&sniffPort, "port", "p", 9000, "proxy listen port")
 	cmd.Flags().BoolVar(&sniffAutoDownload, "auto", false, "automatically download detected streams")
-	cmd.Flags().StringVar(&caCertPath, "ca-cert", "", "path to CA certificate for HTTPS interception")
-	cmd.Flags().StringVar(&caKeyPath, "ca-key", "", "path to CA private key for HTTPS interception")
 }
 
 func runSniff(cmd *cobra.Command, args []string) error {
@@ -76,8 +71,6 @@ func runSniff(cmd *cobra.Command, args []string) error {
 
 	proxyConfig := sniffer.ProxyConfig{
 		Port:     sniffPort,
-		CACert:   caCertPath,
-		CAKey:    caKeyPath,
 		Verbose:  verbose,
 		Detector: detector,
 	}
@@ -100,36 +93,28 @@ func runSniff(cmd *cobra.Command, args []string) error {
 	return proxy.Start(ctx)
 }
 
-func handleDetectedMedia(ctx context.Context, media sniffer.DetectedMedia) {
-	typeLabel := strings.ToUpper(media.Type)
-	fmt.Printf("[%s] %s\n", typeLabel, media.URL)
-	if media.ContentType != "" {
-		fmt.Printf("  Content-Type: %s\n", media.ContentType)
+func handleDetectedMedia(ctx context.Context, detected sniffer.DetectedMedia) {
+	typeLabel := strings.ToUpper(detected.Type)
+	fmt.Printf("[%s] %s\n", typeLabel, detected.URL)
+	if detected.ContentType != "" {
+		fmt.Printf("  Content-Type: %s\n", detected.ContentType)
 	}
-	if media.Size > 0 {
-		fmt.Printf("  Size: %s\n", util.FormatBytes(media.Size))
+	if detected.Size > 0 {
+		fmt.Printf("  Size: %s\n", media.FormatBytes(detected.Size))
 	}
 	fmt.Println()
 
 	if sniffAutoDownload {
 		go func() {
-			client := util.NewHTTPClient(util.HTTPClientConfig{
-				UserAgent: userAgent,
-				Verbose:   verbose,
-			})
-
-			outName := util.FilenameFromURL(media.URL)
-			outPath := filepath.Join(outputDir, outName)
-
-			eng := downloader.NewHTTPDownloader(client, downloader.HTTPDownloaderConfig{
-				Workers: workers,
-				Verbose: verbose,
-			})
-
-			if err := eng.Download(ctx, media.URL, outPath); err != nil {
-				fmt.Fprintf(os.Stderr, "Download failed: %s: %v\n", media.URL, err)
-			} else {
-				fmt.Printf("Downloaded: %s\n", outPath)
+			service := download.NewService(download.Config{DefaultOutputDir: func() (string, error) { return outputDir, nil }, DefaultWorkers: workers})
+			snapshot, err := service.Queue(ctx, download.Request{ID: "detected_" + detected.Type + "_" + fmt.Sprint(detected.Size), URL: detected.URL, OutputDir: outputDir, UserAgent: userAgent, Workers: workers})
+			if err == nil {
+				snapshot, err = service.Wait(ctx, snapshot.ID)
+			}
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Download failed: %s: %v\n", detected.URL, err)
+			} else if snapshot.Status == download.StatusCompleted {
+				fmt.Printf("Downloaded: %s\n", snapshot.OutputPath)
 			}
 		}()
 	}

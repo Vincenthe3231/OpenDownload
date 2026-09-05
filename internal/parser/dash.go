@@ -5,58 +5,21 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
-	"strings"
 
-	"github.com/opendownload/opendownload/internal/util"
+	"github.com/opendownload/opendownload/internal/media"
 )
 
-type DASHManifest struct {
-	BaseURL  string
-	Periods  []DASHPeriod
-	Duration float64
-}
-
-type DASHPeriod struct {
-	ID             string
-	Duration       float64
-	AdaptationSets []DASHAdaptationSet
-}
-
-type DASHAdaptationSet struct {
-	MimeType        string
-	Codecs          string
-	Lang            string
-	Representations []DASHRepresentation
-}
-
-type DASHRepresentation struct {
-	ID         string
-	Bandwidth  int
-	Width      int
-	Height     int
-	Codecs     string
-	MimeType   string
-	Segments   []DASHSegment
-	BaseURL    string
-}
-
-type DASHSegment struct {
-	URL      string
-	Duration float64
-	Range    string
-}
-
 type mpdRoot struct {
-	XMLName             xml.Name   `xml:"MPD"`
-	MediaPresentationDuration string `xml:"mediaPresentationDuration,attr"`
-	BaseURL             string     `xml:"BaseURL"`
-	Periods             []mpdPeriod `xml:"Period"`
+	XMLName                   xml.Name    `xml:"MPD"`
+	MediaPresentationDuration string      `xml:"mediaPresentationDuration,attr"`
+	BaseURL                   string      `xml:"BaseURL"`
+	Periods                   []mpdPeriod `xml:"Period"`
 }
 
 type mpdPeriod struct {
-	ID             string            `xml:"id,attr"`
-	Duration       string            `xml:"duration,attr"`
-	BaseURL        string            `xml:"BaseURL"`
+	ID             string             `xml:"id,attr"`
+	Duration       string             `xml:"duration,attr"`
+	BaseURL        string             `xml:"BaseURL"`
 	AdaptationSets []mpdAdaptationSet `xml:"AdaptationSet"`
 }
 
@@ -84,12 +47,13 @@ type mpdRepresentation struct {
 }
 
 type mpdSegmentTemplate struct {
-	Initialization string           `xml:"initialization,attr"`
-	Media          string           `xml:"media,attr"`
-	StartNumber    int              `xml:"startNumber,attr"`
-	Duration       int              `xml:"duration,attr"`
-	Timescale      int              `xml:"timescale,attr"`
-	Timeline       *mpdTimeline     `xml:"SegmentTimeline"`
+	Initialization         string       `xml:"initialization,attr"`
+	Media                  string       `xml:"media,attr"`
+	StartNumber            int64        `xml:"startNumber,attr"`
+	Duration               int64        `xml:"duration,attr"`
+	Timescale              int64        `xml:"timescale,attr"`
+	PresentationTimeOffset int64        `xml:"presentationTimeOffset,attr"`
+	Timeline               *mpdTimeline `xml:"SegmentTimeline"`
 }
 
 type mpdTimeline struct {
@@ -97,16 +61,16 @@ type mpdTimeline struct {
 }
 
 type mpdTimelineS struct {
-	T int `xml:"t,attr"`
-	D int `xml:"d,attr"`
-	R int `xml:"r,attr"`
+	T *int64 `xml:"t,attr"`
+	D int64  `xml:"d,attr"`
+	R int64  `xml:"r,attr"`
 }
 
 type mpdSegmentList struct {
-	Duration       int              `xml:"duration,attr"`
-	Timescale      int              `xml:"timescale,attr"`
-	Initialization *mpdSegURL       `xml:"Initialization"`
-	SegmentURLs    []mpdSegURL      `xml:"SegmentURL"`
+	Duration       int64       `xml:"duration,attr"`
+	Timescale      int64       `xml:"timescale,attr"`
+	Initialization *mpdSegURL  `xml:"Initialization"`
+	SegmentURLs    []mpdSegURL `xml:"SegmentURL"`
 }
 
 type mpdSegURL struct {
@@ -122,14 +86,19 @@ type mpdSegmentBase struct {
 }
 
 type mpdInit struct {
-	Range    string `xml:"range,attr"`
+	Range     string `xml:"range,attr"`
 	SourceURL string `xml:"sourceURL,attr"`
 }
 
+// ParseDASH parses a static DASH manifest and resolves all relative segment URLs
+// against baseURL.
 func ParseDASH(data []byte, baseURL string) (*DASHManifest, error) {
 	var mpd mpdRoot
 	if err := xml.Unmarshal(data, &mpd); err != nil {
-		return nil, fmt.Errorf("failed to parse MPD: %w", err)
+		return nil, fmt.Errorf("parse MPD: %w", err)
+	}
+	if mpd.XMLName.Local != "MPD" {
+		return nil, validationError("DASH manifest", "root element must be MPD")
 	}
 
 	manifest := &DASHManifest{
@@ -139,70 +108,75 @@ func ParseDASH(data []byte, baseURL string) (*DASHManifest, error) {
 
 	mpdBaseURL := baseURL
 	if mpd.BaseURL != "" {
-		mpdBaseURL = util.ResolveURL(baseURL, mpd.BaseURL)
+		mpdBaseURL = media.ResolveURL(baseURL, mpd.BaseURL)
 	}
 
-	for _, p := range mpd.Periods {
+	for _, sourcePeriod := range mpd.Periods {
 		period := DASHPeriod{
-			ID:       p.ID,
-			Duration: parseDuration(p.Duration),
+			ID:       sourcePeriod.ID,
+			Duration: parseDuration(sourcePeriod.Duration),
 		}
 
 		periodBaseURL := mpdBaseURL
-		if p.BaseURL != "" {
-			periodBaseURL = util.ResolveURL(mpdBaseURL, p.BaseURL)
+		if sourcePeriod.BaseURL != "" {
+			periodBaseURL = media.ResolveURL(mpdBaseURL, sourcePeriod.BaseURL)
 		}
+		periodDuration := effectivePeriodDuration(period.Duration, manifest.Duration, len(mpd.Periods))
 
-		for _, as := range p.AdaptationSets {
-			adaptSet := DASHAdaptationSet{
-				MimeType: as.MimeType,
-				Codecs:   as.Codecs,
-				Lang:     as.Lang,
+		for _, sourceSet := range sourcePeriod.AdaptationSets {
+			adaptationSet := DASHAdaptationSet{
+				MimeType: sourceSet.MimeType,
+				Codecs:   sourceSet.Codecs,
+				Lang:     sourceSet.Lang,
 			}
 
-			asBaseURL := periodBaseURL
-			if as.BaseURL != "" {
-				asBaseURL = util.ResolveURL(periodBaseURL, as.BaseURL)
+			setBaseURL := periodBaseURL
+			if sourceSet.BaseURL != "" {
+				setBaseURL = media.ResolveURL(periodBaseURL, sourceSet.BaseURL)
 			}
 
-			for _, r := range as.Representations {
-				rep := DASHRepresentation{
-					ID:        r.ID,
-					Bandwidth: r.Bandwidth,
-					Width:     r.Width,
-					Height:    r.Height,
-					Codecs:    r.Codecs,
-					MimeType:  r.MimeType,
+			for _, sourceRepresentation := range sourceSet.Representations {
+				representation := DASHRepresentation{
+					ID:        sourceRepresentation.ID,
+					Bandwidth: sourceRepresentation.Bandwidth,
+					Width:     sourceRepresentation.Width,
+					Height:    sourceRepresentation.Height,
+					Codecs:    sourceRepresentation.Codecs,
+					MimeType:  sourceRepresentation.MimeType,
 				}
 
-				repBaseURL := asBaseURL
-				if r.BaseURL != "" {
-					repBaseURL = util.ResolveURL(asBaseURL, r.BaseURL)
+				representationBaseURL := setBaseURL
+				if sourceRepresentation.BaseURL != "" {
+					representationBaseURL = media.ResolveURL(setBaseURL, sourceRepresentation.BaseURL)
 				}
-				rep.BaseURL = repBaseURL
+				representation.BaseURL = representationBaseURL
 
-				tmpl := r.SegmentTemplate
-				if tmpl == nil {
-					tmpl = as.SegmentTemplate
+				template := sourceRepresentation.SegmentTemplate
+				if template == nil {
+					template = sourceSet.SegmentTemplate
 				}
-
-				segList := r.SegmentList
-				if segList == nil {
-					segList = as.SegmentList
-				}
-
-				if tmpl != nil {
-					rep.Segments = buildSegmentsFromTemplate(tmpl, r.ID, r.Bandwidth, repBaseURL)
-				} else if segList != nil {
-					rep.Segments = buildSegmentsFromList(segList, repBaseURL)
-				} else if r.SegmentBase != nil {
-					rep.Segments = []DASHSegment{{URL: repBaseURL}}
+				segmentList := sourceRepresentation.SegmentList
+				if segmentList == nil {
+					segmentList = sourceSet.SegmentList
 				}
 
-				adaptSet.Representations = append(adaptSet.Representations, rep)
+				var err error
+				switch {
+				case template != nil:
+					representation.Segments, err = buildSegmentsFromTemplate(template, sourceRepresentation.ID, sourceRepresentation.Bandwidth, representationBaseURL, periodDuration)
+				case segmentList != nil:
+					representation.Segments = buildSegmentsFromList(segmentList, representationBaseURL)
+				case sourceRepresentation.SegmentBase != nil:
+					representation.Segments = []DASHSegment{{URL: representationBaseURL}}
+				}
+				if err != nil {
+					return nil, fmt.Errorf("representation %q: %w", sourceRepresentation.ID, err)
+				}
+
+				adaptationSet.Representations = append(adaptationSet.Representations, representation)
 			}
 
-			period.AdaptationSets = append(period.AdaptationSets, adaptSet)
+			period.AdaptationSets = append(period.AdaptationSets, adaptationSet)
 		}
 
 		manifest.Periods = append(manifest.Periods, period)
@@ -211,138 +185,69 @@ func ParseDASH(data []byte, baseURL string) (*DASHManifest, error) {
 	return manifest, nil
 }
 
-func buildSegmentsFromTemplate(tmpl *mpdSegmentTemplate, repID string, bw int, baseURL string) []DASHSegment {
-	var segments []DASHSegment
-
-	if tmpl.Initialization != "" {
-		initURL := replaceTemplateVars(tmpl.Initialization, repID, bw, 0, 0)
-		segments = append(segments, DASHSegment{
-			URL: util.ResolveURL(baseURL, initURL),
-		})
+func effectivePeriodDuration(periodDuration, manifestDuration float64, periodCount int) float64 {
+	if periodDuration > 0 {
+		return periodDuration
 	}
-
-	timescale := tmpl.Timescale
-	if timescale == 0 {
-		timescale = 1
+	if periodCount == 1 {
+		return manifestDuration
 	}
-
-	if tmpl.Timeline != nil {
-		currentTime := 0
-		for _, s := range tmpl.Timeline.Segments {
-			if s.T > 0 {
-				currentTime = s.T
-			}
-			repeat := s.R + 1
-			for i := 0; i < repeat; i++ {
-				mediaURL := replaceTemplateVars(tmpl.Media, repID, bw, len(segments), currentTime)
-				segments = append(segments, DASHSegment{
-					URL:      util.ResolveURL(baseURL, mediaURL),
-					Duration: float64(s.D) / float64(timescale),
-				})
-				currentTime += s.D
-			}
-		}
-	} else if tmpl.Duration > 0 {
-		segDuration := float64(tmpl.Duration) / float64(timescale)
-		num := tmpl.StartNumber
-
-		totalSegments := 100
-		for i := 0; i < totalSegments; i++ {
-			mediaURL := replaceTemplateVars(tmpl.Media, repID, bw, num, num*tmpl.Duration)
-			segments = append(segments, DASHSegment{
-				URL:      util.ResolveURL(baseURL, mediaURL),
-				Duration: segDuration,
-			})
-			num++
-		}
-	}
-
-	return segments
+	return 0
 }
 
-func buildSegmentsFromList(segList *mpdSegmentList, baseURL string) []DASHSegment {
-	var segments []DASHSegment
-
-	if segList.Initialization != nil {
-		src := segList.Initialization.SourceURL
-		if src == "" {
-			src = segList.Initialization.Media
+func buildSegmentsFromList(segmentList *mpdSegmentList, baseURL string) []DASHSegment {
+	segments := make([]DASHSegment, 0, len(segmentList.SegmentURLs)+1)
+	if segmentList.Initialization != nil {
+		source := segmentList.Initialization.SourceURL
+		if source == "" {
+			source = segmentList.Initialization.Media
 		}
-		if src != "" {
+		if source != "" {
 			segments = append(segments, DASHSegment{
-				URL:   util.ResolveURL(baseURL, src),
-				Range: segList.Initialization.MediaRange,
+				URL:   media.ResolveURL(baseURL, source),
+				Range: segmentList.Initialization.MediaRange,
 			})
 		}
 	}
 
-	for _, su := range segList.SegmentURLs {
-		src := su.Media
-		if src == "" {
-			src = su.SourceURL
+	for _, segmentURL := range segmentList.SegmentURLs {
+		source := segmentURL.Media
+		if source == "" {
+			source = segmentURL.SourceURL
 		}
-		seg := DASHSegment{
-			Range: su.MediaRange,
-		}
-		if src != "" {
-			seg.URL = util.ResolveURL(baseURL, src)
+		segment := DASHSegment{Range: segmentURL.MediaRange}
+		if source != "" {
+			segment.URL = media.ResolveURL(baseURL, source)
 		} else {
-			seg.URL = baseURL
+			segment.URL = baseURL
 		}
-		segments = append(segments, seg)
+		segments = append(segments, segment)
 	}
-
 	return segments
 }
 
-func replaceTemplateVars(tmpl, repID string, bw, number, time int) string {
-	s := tmpl
-	s = strings.ReplaceAll(s, "$RepresentationID$", repID)
-	s = strings.ReplaceAll(s, "$Bandwidth$", strconv.Itoa(bw))
+var iso8601DurationRE = regexp.MustCompile(`^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$`)
 
-	s = replaceNumberVar(s, "$Number$", number)
-	s = replaceNumberVar(s, "$Time$", time)
-
-	return s
-}
-
-var numberFormatRe = regexp.MustCompile(`\$(Number|Time)%(\d+)d\$`)
-
-func replaceNumberVar(s, simple string, val int) string {
-	s = strings.ReplaceAll(s, simple, strconv.Itoa(val))
-	s = numberFormatRe.ReplaceAllStringFunc(s, func(match string) string {
-		sub := numberFormatRe.FindStringSubmatch(match)
-		if len(sub) < 3 {
-			return match
-		}
-		width, _ := strconv.Atoi(sub[2])
-		return fmt.Sprintf("%0*d", width, val)
-	})
-	return s
-}
-
-var iso8601Re = regexp.MustCompile(`PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?`)
-
-func parseDuration(s string) float64 {
-	if s == "" {
+func parseDuration(value string) float64 {
+	if value == "" {
 		return 0
 	}
-	matches := iso8601Re.FindStringSubmatch(s)
+	matches := iso8601DurationRE.FindStringSubmatch(value)
 	if matches == nil {
 		return 0
 	}
 	var total float64
 	if matches[1] != "" {
-		h, _ := strconv.ParseFloat(matches[1], 64)
-		total += h * 3600
+		hours, _ := strconv.ParseFloat(matches[1], 64)
+		total += hours * 3600
 	}
 	if matches[2] != "" {
-		m, _ := strconv.ParseFloat(matches[2], 64)
-		total += m * 60
+		minutes, _ := strconv.ParseFloat(matches[2], 64)
+		total += minutes * 60
 	}
 	if matches[3] != "" {
-		sec, _ := strconv.ParseFloat(matches[3], 64)
-		total += sec
+		seconds, _ := strconv.ParseFloat(matches[3], 64)
+		total += seconds
 	}
 	return total
 }

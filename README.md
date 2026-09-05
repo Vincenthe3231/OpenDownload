@@ -75,13 +75,9 @@ The CLI proxy is an optional fallback for advanced use cases. Prefer the Firefox
 .\build\bin\opendownload-cli.exe proxy run
 ```
 
-Set your browser proxy to `127.0.0.1:9000`, load the page, and play the media. HTTPS request inspection requires a trusted local certificate and key:
+Set your browser proxy to `127.0.0.1:9000`, load the page, and play the media. The proxy binds only to loopback, forwards ordinary HTTP traffic, and tunnels HTTPS without decrypting it. It cannot inspect encrypted media requests.
 
-```powershell
-.\build\bin\opendownload-cli.exe proxy run --ca-cert .\ca.crt --ca-key .\ca.key
-```
-
-Only install a certificate you control, remove it when you no longer need it, and comply with the site terms and applicable law. The Firefox and Zen add on path is the preferred desktop capture workflow because it preserves ordinary browser certificate verification.
+Use the Firefox and Zen add on path for encrypted stream capture because it preserves ordinary browser certificate verification and supplies the request context directly to the desktop app.
 
 ## Requirements and development
 
@@ -92,15 +88,20 @@ Only install a certificate you control, remove it when you no longer need it, an
 Run validation in this order because Go embeds the generated client bundle:
 
 ```powershell
+pnpm --dir client typecheck
+pnpm --dir client test
 pnpm --dir client build
 go test ./...
+go vet ./...
+go test -race ./...
 wails build
 ```
 
 Project layout:
 
 - `cmd/` contains the Cobra CLI.
-- `internal/` contains HTTP, HLS, DASH, detection, and utility packages.
+- `internal/download/` owns jobs, cancellation, output reservations, and publication.
+- `internal/media/`, `internal/transport/`, `internal/capture/`, and `internal/sniffer/` each own one cohesive concern.
 - `client/` contains the Vue desktop interface.
 - `app.go` is the Wails bridge used by the desktop application.
 

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/opendownload/opendownload/internal/util"
+	"github.com/opendownload/opendownload/internal/transport"
 )
 
 func TestHTTPDownloaderUsesVerifiedByteRanges(t *testing.T) {
@@ -43,7 +43,7 @@ func TestHTTPDownloaderUsesVerifiedByteRanges(t *testing.T) {
 	defer server.Close()
 
 	path := filepath.Join(t.TempDir(), "movie.bin")
-	err := NewHTTPDownloader(util.NewHTTPClient(util.HTTPClientConfig{}), HTTPDownloaderConfig{Workers: 4}).Download(context.Background(), server.URL, path)
+	err := NewHTTPDownloader(transport.NewHTTPClient(transport.HTTPClientConfig{}), HTTPDownloaderConfig{Workers: 4}).Download(context.Background(), server.URL, path)
 	if err != nil {
 		t.Fatalf("download failed: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestHTTPDownloaderFallsBackWhenRangeProbeIsInvalid(t *testing.T) {
 	defer server.Close()
 
 	path := filepath.Join(t.TempDir(), "movie.bin")
-	err := NewHTTPDownloader(util.NewHTTPClient(util.HTTPClientConfig{}), HTTPDownloaderConfig{Workers: 4}).Download(context.Background(), server.URL, path)
+	err := NewHTTPDownloader(transport.NewHTTPClient(transport.HTTPClientConfig{}), HTTPDownloaderConfig{Workers: 4}).Download(context.Background(), server.URL, path)
 	if err != nil {
 		t.Fatalf("download failed: %v", err)
 	}

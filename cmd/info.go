@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/opendownload/opendownload/internal/media"
 	"github.com/opendownload/opendownload/internal/parser"
-	"github.com/opendownload/opendownload/internal/util"
+	"github.com/opendownload/opendownload/internal/transport"
 	"github.com/spf13/cobra"
 )
 
@@ -26,25 +27,23 @@ func runInfo(cmd *cobra.Command, args []string) error {
 	url := args[0]
 	ctx := context.Background()
 
-	client := util.NewHTTPClient(util.HTTPClientConfig{
+	client := transport.NewHTTPClient(transport.HTTPClientConfig{
 		UserAgent: userAgent,
 		ProxyURL:  proxyURL,
 		Verbose:   verbose,
 	})
 
-	streamType := detectStreamType(url)
-
-	switch streamType {
-	case "hls":
+	switch media.ClassifyURL(url) {
+	case media.SourceHLS:
 		return infoHLS(ctx, client, url)
-	case "dash":
+	case media.SourceDASH:
 		return infoDASH(ctx, client, url)
 	default:
 		return infoDirect(ctx, client, url)
 	}
 }
 
-func infoDirect(ctx context.Context, client *util.HTTPClient, url string) error {
+func infoDirect(ctx context.Context, client *transport.HTTPClient, url string) error {
 	size, resumable, contentType, err := client.Head(ctx, url)
 	if err != nil {
 		return fmt.Errorf("failed to inspect URL: %w", err)
@@ -54,17 +53,17 @@ func infoDirect(ctx context.Context, client *util.HTTPClient, url string) error 
 	fmt.Printf("Type:         Direct download\n")
 	fmt.Printf("Content-Type: %s\n", contentType)
 	if size > 0 {
-		fmt.Printf("Size:         %s\n", util.FormatBytes(size))
+		fmt.Printf("Size:         %s\n", media.FormatBytes(size))
 	} else {
 		fmt.Printf("Size:         Unknown\n")
 	}
 	fmt.Printf("Resumable:    %v\n", resumable)
-	fmt.Printf("Filename:     %s\n", util.FilenameFromURL(url))
+	fmt.Printf("Filename:     %s\n", media.FilenameFromURL(url))
 
 	return nil
 }
 
-func infoHLS(ctx context.Context, client *util.HTTPClient, url string) error {
+func infoHLS(ctx context.Context, client *transport.HTTPClient, url string) error {
 	body, err := client.Get(ctx, url)
 	if err != nil {
 		return fmt.Errorf("failed to fetch playlist: %w", err)
@@ -84,7 +83,7 @@ func infoHLS(ctx context.Context, client *util.HTTPClient, url string) error {
 		fmt.Printf("  %-4s  %-12s  %-8s  %-10s  %s\n", "──", "──────────", "───", "─────────", "──────")
 		for i, v := range playlist.Variants {
 			res := fmt.Sprintf("%dx%d", v.Resolution.Width, v.Resolution.Height)
-			bw := util.FormatBitrate(v.Bandwidth)
+			bw := media.FormatBitrate(v.Bandwidth)
 			fps := ""
 			if v.FrameRate > 0 {
 				fps = fmt.Sprintf("%.0f", v.FrameRate)
@@ -118,7 +117,7 @@ func infoHLS(ctx context.Context, client *util.HTTPClient, url string) error {
 	return nil
 }
 
-func infoDASH(ctx context.Context, client *util.HTTPClient, url string) error {
+func infoDASH(ctx context.Context, client *transport.HTTPClient, url string) error {
 	body, err := client.Get(ctx, url)
 	if err != nil {
 		return fmt.Errorf("failed to fetch manifest: %w", err)
@@ -141,7 +140,7 @@ func infoDASH(ctx context.Context, client *util.HTTPClient, url string) error {
 			fmt.Printf("    %-4s  %-12s  %-10s  %s\n", "──", "──────────", "─────────", "──────")
 			for _, r := range as.Representations {
 				res := fmt.Sprintf("%dx%d", r.Width, r.Height)
-				bw := util.FormatBitrate(r.Bandwidth)
+				bw := media.FormatBitrate(r.Bandwidth)
 				codecs := r.Codecs
 				if codecs == "" {
 					codecs = as.Codecs

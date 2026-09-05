@@ -14,66 +14,50 @@ import (
 	"time"
 )
 
-const (
-	pairingLifetime = 5 * time.Minute
-	maxPayloadBytes = 64 << 10
-)
-
-var allowedHeaders = map[string]string{
-	"accept":          "Accept",
-	"accept-language": "Accept-Language",
-	"authorization":   "Authorization",
-	"cookie":          "Cookie",
-	"origin":          "Origin",
-	"referer":         "Referer",
-	"user-agent":      "User-Agent",
-}
-
-type Stream struct {
-	ID         string    `json:"id"`
-	URL        string    `json:"url"`
-	Host       string    `json:"host"`
-	Name       string    `json:"name"`
-	Type       string    `json:"type"`
-	CapturedAt time.Time `json:"capturedAt"`
-}
-
-type Pairing struct {
-	Code      string    `json:"code"`
-	ExpiresAt time.Time `json:"expiresAt"`
-}
-
-type receivedStream struct {
-	URL     string            `json:"url"`
-	Type    string            `json:"type"`
-	Headers map[string]string `json:"headers"`
-}
-
-type storedStream struct {
-	Stream
-	headers map[string]string
-}
-
+// Manager owns one local browser capture session and its in memory request data.
 type Manager struct {
-	mu       sync.Mutex
-	server   *http.Server
-	listener net.Listener
-	token    string
-	expires  time.Time
-	paired   bool
-	streams  map[string]storedStream
-	seen     map[string]struct{}
-	now      func() time.Time
+	mu           sync.Mutex
+	server       *http.Server
+	listener     net.Listener
+	token        string
+	expires      time.Time
+	paired       bool
+	streams      map[string]storedStream
+	streamOrder  []string
+	seen         map[string]struct{}
+	now          func() time.Time
+	listeners    map[uint64]Listener
+	nextListener uint64
 }
 
+// NewManager returns an idle capture manager.
 func NewManager() *Manager {
 	return &Manager{
-		streams: make(map[string]storedStream),
-		seen:    make(map[string]struct{}),
-		now:     time.Now,
+		streams:   make(map[string]storedStream),
+		seen:      make(map[string]struct{}),
+		now:       time.Now,
+		listeners: make(map[uint64]Listener),
 	}
 }
 
+// Subscribe registers a local listener and returns an unsubscribe function.
+func (m *Manager) Subscribe(listener Listener) func() {
+	if listener == nil {
+		return func() {}
+	}
+	m.mu.Lock()
+	id := m.nextListener
+	m.nextListener++
+	m.listeners[id] = listener
+	m.mu.Unlock()
+	return func() {
+		m.mu.Lock()
+		delete(m.listeners, id)
+		m.mu.Unlock()
+	}
+}
+
+// Start replaces any active capture session with a fresh loopback session.
 func (m *Manager) Start() (Pairing, error) {
 	m.Stop()
 
@@ -83,7 +67,7 @@ func (m *Manager) Start() (Pairing, error) {
 	}
 	token, err := randomToken()
 	if err != nil {
-		listener.Close()
+		_ = listener.Close()
 		return Pairing{}, err
 	}
 
@@ -93,6 +77,7 @@ func (m *Manager) Start() (Pairing, error) {
 	m.expires = m.now().Add(pairingLifetime)
 	m.paired = false
 	m.streams = make(map[string]storedStream)
+	m.streamOrder = nil
 	m.seen = make(map[string]struct{})
 	server := &http.Server{Handler: http.HandlerFunc(m.handleStream)}
 	m.server = server
@@ -100,39 +85,55 @@ func (m *Manager) Start() (Pairing, error) {
 		Code:      fmt.Sprintf("http://%s#%s", listener.Addr().String(), token),
 		ExpiresAt: m.expires,
 	}
+	session := m.sessionLocked()
 	m.mu.Unlock()
 
-	go server.Serve(listener)
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	m.emit(Event{Type: EventSessionChanged, Session: &session})
 	return pairing, nil
 }
 
+// Stop clears the active session, captures, and private headers.
 func (m *Manager) Stop() {
 	m.mu.Lock()
 	server := m.server
+	wasActive := server != nil || m.token != ""
 	m.server = nil
 	m.listener = nil
 	m.token = ""
 	m.expires = time.Time{}
 	m.paired = false
 	m.streams = make(map[string]storedStream)
+	m.streamOrder = nil
 	m.seen = make(map[string]struct{})
 	m.mu.Unlock()
 	if server != nil {
-		server.Close()
+		_ = server.Close()
+	}
+	if wasActive {
+		session := SessionSnapshot{}
+		m.emit(Event{Type: EventSessionChanged, Session: &session})
 	}
 }
 
-func (m *Manager) List() []Stream {
+// List returns ordered public summaries without private request data.
+func (m *Manager) List() []StreamSummary {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	streams := make([]Stream, 0, len(m.streams))
-	for _, stream := range m.streams {
-		streams = append(streams, stream.Stream)
+	streams := make([]StreamSummary, 0, len(m.streamOrder))
+	for _, id := range m.streamOrder {
+		stream, ok := m.streams[id]
+		if ok {
+			streams = append(streams, summarize(stream.Stream))
+		}
 	}
 	return streams
 }
 
+// Get returns the stored request URL and a private header copy for a download job.
 func (m *Manager) Get(id string) (Stream, map[string]string, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -150,19 +151,19 @@ func (m *Manager) Get(id string) (Stream, map[string]string, bool) {
 
 func (m *Manager) handleStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, OpenDownloadSession")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, "+sessionHeader)
 	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if r.Method != http.MethodPost || r.URL.Path != "/v1/firefox/streams" || !isLoopback(r.RemoteAddr) {
+	if r.Method != http.MethodPost || r.URL.Path != captureRoute || !isLoopback(r.RemoteAddr) {
 		http.NotFound(w, r)
 		return
 	}
 
 	m.mu.Lock()
-	valid := m.token != "" && (m.paired || m.now().Before(m.expires)) && r.Header.Get("OpenDownloadSession") == m.token
+	valid := m.token != "" && (m.paired || m.now().Before(m.expires)) && r.Header.Get(sessionHeader) == m.token
 	m.mu.Unlock()
 	if !valid {
 		http.Error(w, "invalid or expired pairing code", http.StatusUnauthorized)
@@ -190,12 +191,54 @@ func (m *Manager) handleStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m.paired = true
-	if _, exists := m.seen[stream.URL]; !exists {
-		m.seen[stream.URL] = struct{}{}
-		m.streams[stream.ID] = storedStream{Stream: stream, headers: headers}
+	if _, exists := m.seen[stream.URL]; exists {
+		m.mu.Unlock()
+		w.WriteHeader(http.StatusCreated)
+		return
+	}
+	m.evictOldestLocked()
+	m.seen[stream.URL] = struct{}{}
+	m.streams[stream.ID] = storedStream{Stream: stream, headers: headers}
+	m.streamOrder = append(m.streamOrder, stream.ID)
+	summary := summarize(stream)
+	session := m.sessionLocked()
+	m.mu.Unlock()
+
+	m.emit(Event{Type: EventSessionChanged, Session: &session})
+	m.emit(Event{Type: EventStreamAdded, Stream: &summary})
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (m *Manager) evictOldestLocked() {
+	if len(m.streamOrder) < maxCapturedStreams {
+		return
+	}
+	oldestID := m.streamOrder[0]
+	m.streamOrder = m.streamOrder[1:]
+	if stream, ok := m.streams[oldestID]; ok {
+		delete(m.seen, stream.URL)
+	}
+	delete(m.streams, oldestID)
+}
+
+func (m *Manager) sessionLocked() SessionSnapshot {
+	return SessionSnapshot{
+		Active:    m.token != "",
+		ExpiresAt: m.expires,
+		Paired:    m.paired,
+	}
+}
+
+func (m *Manager) emit(event Event) {
+	m.mu.Lock()
+	listeners := make([]Listener, 0, len(m.listeners))
+	for _, listener := range m.listeners {
+		listeners = append(listeners, listener)
 	}
 	m.mu.Unlock()
-	w.WriteHeader(http.StatusCreated)
+	for _, listener := range listeners {
+		listener(event)
+	}
 }
 
 func validate(received receivedStream, capturedAt time.Time) (Stream, map[string]string, error) {

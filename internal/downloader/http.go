@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/opendownload/opendownload/internal/util"
+	"github.com/opendownload/opendownload/internal/transport"
 )
 
 type HTTPDownloaderConfig struct {
@@ -22,21 +22,25 @@ type HTTPDownloaderConfig struct {
 }
 
 type HTTPDownloader struct {
-	client *util.HTTPClient
+	client *transport.HTTPClient
 	config HTTPDownloaderConfig
 }
 
-func NewHTTPDownloader(client *util.HTTPClient, config HTTPDownloaderConfig) *HTTPDownloader {
+// NewHTTPDownloader creates a direct HTTP transfer engine. The caller owns
+// output publication and must supply an uncreated work file path to Download.
+func NewHTTPDownloader(client *transport.HTTPClient, config HTTPDownloaderConfig) *HTTPDownloader {
 	if config.Workers <= 0 {
 		config.Workers = 8
 	}
 	return &HTTPDownloader{client: client, config: config}
 }
 
+// Download transfers url into the exact caller supplied work path. It never
+// renames or removes a separate final destination.
 func (d *HTTPDownloader) Download(ctx context.Context, url, outPath string) error {
 	size, _, _, err := d.client.Head(ctx, url)
 	if err != nil {
-		return fmt.Errorf("failed to inspect URL: %w", err)
+		return transportError("inspect URL", err)
 	}
 	reporter := newProgressReporter(d.config.OnProgress)
 	defer reporter.finish()
@@ -57,7 +61,7 @@ func (d *HTTPDownloader) Download(ctx context.Context, url, outPath string) erro
 func (d *HTTPDownloader) probeRange(ctx context.Context, url string) (int64, bool, error) {
 	resp, err := d.client.GetRange(ctx, url, 0, 0)
 	if err != nil {
-		return 0, false, fmt.Errorf("probe range support: %w", err)
+		return 0, false, transportError("probe range support", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusPartialContent {
@@ -95,23 +99,22 @@ func parseContentRange(value string) (int64, int64, int64, bool) {
 func (d *HTTPDownloader) downloadSingle(ctx context.Context, url, outPath string, totalSize int64, reporter *progressReporter) error {
 	resp, err := d.client.GetBody(ctx, url)
 	if err != nil {
-		return err
+		return transportError("fetch URL", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
+		return validationError("HTTP response", fmt.Sprintf("received %d", resp.StatusCode))
 	}
 
-	temporaryPath := outPath + ".part"
-	file, err := os.Create(temporaryPath)
+	file, err := createWorkOutput(outPath)
 	if err != nil {
-		return fmt.Errorf("failed to create file: %w", err)
+		return err
 	}
-	published := false
+	succeeded := false
 	defer func() {
 		_ = file.Close()
-		if !published {
-			_ = os.Remove(temporaryPath)
+		if !succeeded {
+			removeWorkOutput(outPath)
 		}
 	}()
 
@@ -122,12 +125,9 @@ func (d *HTTPDownloader) downloadSingle(ctx context.Context, url, outPath string
 		return err
 	}
 	if err := file.Close(); err != nil {
-		return err
+		return fmt.Errorf("close work output: %w", err)
 	}
-	if err := publishTemporaryOutput(temporaryPath, outPath); err != nil {
-		return err
-	}
-	published = true
+	succeeded = true
 	return nil
 }
 
@@ -138,23 +138,25 @@ func (d *HTTPDownloader) downloadMultiSegment(ctx context.Context, url, outPath 
 		return d.downloadSingle(ctx, url, outPath, totalSize, reporter)
 	}
 
-	temporaryPath := outPath + ".part"
-	file, err := os.Create(temporaryPath)
+	file, err := createWorkOutput(outPath)
 	if err != nil {
-		return fmt.Errorf("failed to create file: %w", err)
+		return err
 	}
-	published := false
+	succeeded := false
 	defer func() {
-		if !published {
-			_ = os.Remove(temporaryPath)
+		_ = file.Close()
+		if !succeeded {
+			removeWorkOutput(outPath)
 		}
 	}()
 
 	if err := file.Truncate(totalSize); err != nil {
-		file.Close()
-		return fmt.Errorf("failed to allocate file: %w", err)
+		_ = file.Close()
+		return fmt.Errorf("allocate work output: %w", err)
 	}
-	file.Close()
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close work output: %w", err)
+	}
 
 	var downloaded atomic.Int64
 
@@ -188,7 +190,7 @@ func (d *HTTPDownloader) downloadMultiSegment(ctx context.Context, url, outPath 
 		wg.Add(1)
 		go func(start, end int64) {
 			defer wg.Done()
-			if err := d.downloadSegment(ctx, url, temporaryPath, start, end, totalSize, &downloaded); err != nil {
+			if err := d.downloadSegment(ctx, url, outPath, start, end, totalSize, &downloaded); err != nil {
 				errCh <- err
 			}
 		}(start, end)
@@ -206,35 +208,22 @@ func (d *HTTPDownloader) downloadMultiSegment(ctx context.Context, url, outPath 
 		}
 	}
 
-	if err := publishTemporaryOutput(temporaryPath, outPath); err != nil {
-		return err
-	}
-	published = true
-	return nil
-}
-
-func publishTemporaryOutput(temporaryPath, outPath string) error {
-	if err := os.Remove(outPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("replace output file: %w", err)
-	}
-	if err := os.Rename(temporaryPath, outPath); err != nil {
-		return fmt.Errorf("publish output file: %w", err)
-	}
+	succeeded = true
 	return nil
 }
 
 func (d *HTTPDownloader) downloadSegment(ctx context.Context, url, outPath string, start, end, totalSize int64, downloaded *atomic.Int64) error {
 	resp, err := d.client.GetRange(ctx, url, start, end)
 	if err != nil {
-		return err
+		return transportError("fetch HTTP byte range", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusPartialContent {
-		return fmt.Errorf("range request returned HTTP %d: %s", resp.StatusCode, resp.Status)
+		return validationError("HTTP range response", fmt.Sprintf("expected HTTP 206, received %d", resp.StatusCode))
 	}
 	responseStart, responseEnd, responseTotal, validRange := parseContentRange(resp.Header.Get("Content-Range"))
 	if !validRange || responseStart != start || responseEnd != end || responseTotal != totalSize {
-		return fmt.Errorf("range response did not match requested bytes %d-%d", start, end)
+		return validationError("HTTP range response", fmt.Sprintf("Content Range did not match requested bytes %d-%d", start, end))
 	}
 
 	file, err := os.OpenFile(outPath, os.O_WRONLY, 0644)
@@ -264,7 +253,7 @@ func (d *HTTPDownloader) downloadSegment(ctx context.Context, url, outPath strin
 			break
 		}
 		if readErr != nil {
-			return readErr
+			return transportError("read HTTP byte range", readErr)
 		}
 	}
 	if offset != end+1 {

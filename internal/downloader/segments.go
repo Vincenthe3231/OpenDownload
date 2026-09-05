@@ -3,7 +3,6 @@ package downloader
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 )
 
@@ -14,22 +13,21 @@ type segmentResult struct {
 }
 
 // downloadOrderedSegments keeps at most two worker windows of segment data in
-// memory while preserving the source order in the output file.
+// memory while preserving source order in the caller supplied work output.
 func downloadOrderedSegments(ctx context.Context, total, workers int, outPath string, fetch func(context.Context, int) ([]byte, error), downloaded func(int)) error {
 	if workers <= 0 {
 		workers = 1
 	}
 
-	temporaryPath := outPath + ".part"
-	file, err := os.Create(temporaryPath)
+	file, err := createWorkOutput(outPath)
 	if err != nil {
-		return fmt.Errorf("create temporary output file: %w", err)
+		return err
 	}
 	succeeded := false
 	defer func() {
 		if !succeeded {
 			_ = file.Close()
-			_ = os.Remove(temporaryPath)
+			removeWorkOutput(outPath)
 		}
 	}()
 
@@ -105,13 +103,7 @@ func downloadOrderedSegments(ctx context.Context, total, workers int, outPath st
 	close(jobs)
 	workerWG.Wait()
 	if err := file.Close(); err != nil {
-		return fmt.Errorf("close temporary output file: %w", err)
-	}
-	if err := os.Remove(outPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("replace output file: %w", err)
-	}
-	if err := os.Rename(temporaryPath, outPath); err != nil {
-		return fmt.Errorf("publish output file: %w", err)
+		return fmt.Errorf("close work output: %w", err)
 	}
 	succeeded = true
 	return nil

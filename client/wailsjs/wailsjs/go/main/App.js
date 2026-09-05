@@ -6,24 +6,20 @@ export function CancelDownload(arg1) {
   return window['go']['main']['App']['CancelDownload'](arg1);
 }
 
-export function Download(arg1, arg2, arg3) {
-  return window['go']['main']['App']['Download'](arg1, arg2, arg3);
-}
-
-export function DownloadCapturedStream(arg1, arg2, arg3) {
-  return window['go']['main']['App']['DownloadCapturedStream'](arg1, arg2, arg3);
-}
-
 export function ListCapturedStreams() {
   return window['go']['main']['App']['ListCapturedStreams']();
 }
 
-export function QueueCapturedStream(arg1, arg2, arg3) {
-  return window['go']['main']['App']['QueueCapturedStream'](arg1, arg2, arg3);
+export function ListDownloadJobs() {
+  return window['go']['main']['App']['ListDownloadJobs']();
 }
 
-export function QueueDownload(arg1, arg2, arg3) {
-  return window['go']['main']['App']['QueueDownload'](arg1, arg2, arg3);
+export function QueueCapturedStream(arg1) {
+  return window['go']['main']['App']['QueueCapturedStream'](arg1);
+}
+
+export function QueueDownload(arg1) {
+  return window['go']['main']['App']['QueueDownload'](arg1);
 }
 
 export function StartFirefoxCapture() {
