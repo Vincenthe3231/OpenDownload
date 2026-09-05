@@ -6,15 +6,15 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/opendownload/opendownload/internal/parser"
 	"github.com/opendownload/opendownload/internal/util"
 )
 
 type DASHDownloaderConfig struct {
-	Workers int
-	Verbose bool
+	Workers    int
+	Verbose    bool
+	OnProgress ProgressCallback
 }
 
 type DASHDownloader struct {
@@ -32,7 +32,10 @@ func NewDASHDownloader(client *util.HTTPClient, config DASHDownloaderConfig) *DA
 func (d *DASHDownloader) Download(ctx context.Context, rep *parser.DASHRepresentation, outPath string) error {
 	total := len(rep.Segments)
 	var completed atomic.Int64
-	start := time.Now()
+	var downloaded atomic.Int64
+	reporter := newProgressReporter(d.config.OnProgress)
+	defer reporter.finish()
+	reporter.segments(0, 0, int64(total), true)
 
 	results := make([][]byte, total)
 	var mu sync.Mutex
@@ -70,14 +73,12 @@ func (d *DASHDownloader) Download(ctx context.Context, rep *parser.DASHRepresent
 			mu.Unlock()
 
 			done := completed.Add(1)
-			_ = start
-			pct := float64(done) / float64(total) * 100
-			fmt.Printf("\r  Segments: %d/%d (%.1f%%)   ", done, total, pct)
+			bytes := downloaded.Add(int64(len(data)))
+			reporter.segments(bytes, done, int64(total), done == int64(total))
 		}(i, seg)
 	}
 
 	wg.Wait()
-	fmt.Println()
 
 	if downloadErr != nil {
 		return downloadErr

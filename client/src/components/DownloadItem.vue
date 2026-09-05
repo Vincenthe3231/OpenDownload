@@ -1,12 +1,55 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { DownloadItem } from '../store/queue';
-defineProps<{ item: DownloadItem }>();
+
+const props = defineProps<{ item: DownloadItem }>();
+
+const hasKnownProgress = computed(() => props.item.totalBytes > 0 || props.item.totalUnits > 0);
+const progressPercent = computed(() => {
+  if (props.item.totalBytes > 0) return Math.min(100, props.item.downloadedBytes / props.item.totalBytes * 100);
+  if (props.item.totalUnits > 0) return Math.min(100, props.item.completedUnits / props.item.totalUnits * 100);
+  return 0;
+});
+const statusText = computed(() => props.item.status[0].toUpperCase() + props.item.status.slice(1));
+const progressDetail = computed(() => {
+  const item = props.item;
+  if (item.status === 'completed') return item.totalUnits > 0 ? `${item.totalUnits} segments saved` : `${formatBytes(item.downloadedBytes)} saved`;
+  if (item.status === 'failed') return item.downloadedBytes > 0 ? `Stopped after ${formatBytes(item.downloadedBytes)}` : 'Download failed';
+
+  const detail: string[] = [];
+  if (item.totalBytes > 0) detail.push(`${formatBytes(item.downloadedBytes)} of ${formatBytes(item.totalBytes)}`);
+  else if (item.totalUnits > 0) detail.push(`${item.completedUnits} of ${item.totalUnits} segments`);
+  else detail.push(`${formatBytes(item.downloadedBytes)} received`);
+  if (item.bytesPerSecond > 0) detail.push(`${formatBytes(item.bytesPerSecond)}/s`);
+  if (item.hasEta) detail.push(`${formatDuration(item.etaSeconds)} remaining`);
+  return detail.join(' · ');
+});
+
+function formatBytes(value: number) {
+  if (value < 1024) return `${Math.round(value)} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)) - 1, units.length - 1);
+  return `${(value / 1024 ** (index + 1)).toFixed(value >= 1024 ** (index + 2) ? 1 : 0)} ${units[index]}`;
+}
+
+function formatDuration(value: number) {
+  const seconds = Math.max(0, Math.ceil(value));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
 </script>
 
 <template>
   <div class="download-item">
-    <div class="download-summary"><p>{{ item.name }}</p><div class="progress-track" aria-hidden="true"><div class="progress-value" :class="item.status" :style="{ width: item.progress + '%' }"></div></div>
+    <div class="download-summary">
+      <p>{{ item.name }}</p>
+      <div class="progress-track" role="progressbar" :aria-label="`${statusText}. ${progressDetail}`" :aria-valuemin="hasKnownProgress ? 0 : undefined" :aria-valuemax="hasKnownProgress ? 100 : undefined" :aria-valuenow="hasKnownProgress ? Math.round(progressPercent) : undefined">
+        <div class="progress-value" :class="[item.status, { indeterminate: item.status === 'downloading' && !hasKnownProgress }]" :style="{ width: hasKnownProgress ? `${progressPercent}%` : undefined }"></div>
       </div>
-    <span class="status-pill" :class="item.status">{{ item.status }}</span>
+      <p class="progress-detail">{{ progressDetail }}</p>
+    </div>
+    <span class="status-pill" :class="item.status" aria-live="polite">{{ statusText }}</span>
   </div>
 </template>

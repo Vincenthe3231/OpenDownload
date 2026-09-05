@@ -12,12 +12,18 @@ import (
 	"github.com/opendownload/opendownload/internal/downloader"
 	"github.com/opendownload/opendownload/internal/parser"
 	"github.com/opendownload/opendownload/internal/util"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct
 type App struct {
 	ctx     context.Context
 	capture *capture.Manager
+}
+
+type downloadProgressEvent struct {
+	ID string `json:"id"`
+	downloader.Progress
 }
 
 // NewApp creates a new App application struct
@@ -36,8 +42,8 @@ func (a *App) shutdown(context.Context) {
 }
 
 // Download downloads direct media, HLS playlists, or DASH manifests to outputDir.
-func (a *App) Download(url string, outputDir string) error {
-	return a.download(url, outputDir, nil)
+func (a *App) Download(jobID string, url string, outputDir string) error {
+	return a.download(jobID, url, outputDir, nil)
 }
 
 func (a *App) StartFirefoxCapture() (capture.Pairing, error) {
@@ -52,12 +58,12 @@ func (a *App) ListCapturedStreams() []capture.Stream {
 	return a.capture.List()
 }
 
-func (a *App) DownloadCapturedStream(id string, outputDir string) error {
-	stream, headers, ok := a.capture.Get(id)
+func (a *App) DownloadCapturedStream(jobID string, capturedStreamID string, outputDir string) error {
+	stream, headers, ok := a.capture.Get(capturedStreamID)
 	if !ok {
 		return fmt.Errorf("captured stream is no longer available")
 	}
-	if err := a.download(stream.URL, outputDir, headers); err != nil {
+	if err := a.download(jobID, stream.URL, outputDir, headers); err != nil {
 		if strings.Contains(err.Error(), "HTTP 401") || strings.Contains(err.Error(), "HTTP 403") {
 			return fmt.Errorf("stream access was rejected; capture a fresh request and try again: %w", err)
 		}
@@ -66,7 +72,7 @@ func (a *App) DownloadCapturedStream(id string, outputDir string) error {
 	return nil
 }
 
-func (a *App) download(url string, outputDir string, headers map[string]string) error {
+func (a *App) download(jobID string, url string, outputDir string, headers map[string]string) error {
 	url = strings.TrimSpace(url)
 	parsedURL, err := urlpkg.Parse(url)
 	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
@@ -88,19 +94,28 @@ func (a *App) download(url string, outputDir string, headers map[string]string) 
 		return fmt.Errorf("create output folder: %w", err)
 	}
 	outputPath := filepath.Join(outputDir, util.FilenameFromURL(url))
+	progress := a.progressReporter(jobID)
 
 	switch strings.ToLower(filepath.Ext(parsedURL.Path)) {
 	case ".m3u8":
-		return downloadHLS(a.ctx, client, url, outputPath)
+		return downloadHLS(a.ctx, client, url, outputPath, progress)
 	case ".mpd":
-		return downloadDASH(a.ctx, client, url, outputPath)
+		return downloadDASH(a.ctx, client, url, outputPath, progress)
 	default:
-		eng := downloader.NewHTTPDownloader(client, downloader.HTTPDownloaderConfig{Workers: 8})
+		eng := downloader.NewHTTPDownloader(client, downloader.HTTPDownloaderConfig{Workers: 8, OnProgress: progress})
 		return eng.Download(a.ctx, url, outputPath)
 	}
 }
 
-func downloadHLS(ctx context.Context, client *util.HTTPClient, url, outputPath string) error {
+func (a *App) progressReporter(jobID string) downloader.ProgressCallback {
+	return func(progress downloader.Progress) {
+		if a.ctx != nil {
+			runtime.EventsEmit(a.ctx, "download:progress", downloadProgressEvent{ID: jobID, Progress: progress})
+		}
+	}
+}
+
+func downloadHLS(ctx context.Context, client *util.HTTPClient, url, outputPath string, progress downloader.ProgressCallback) error {
 	body, err := client.Get(ctx, url)
 	if err != nil {
 		return fmt.Errorf("fetch HLS playlist: %w", err)
@@ -114,15 +129,15 @@ func downloadHLS(ctx context.Context, client *util.HTTPClient, url, outputPath s
 		if variant == nil {
 			return fmt.Errorf("no HLS variant found")
 		}
-		return downloadHLS(ctx, client, variant.URI, outputPath)
+		return downloadHLS(ctx, client, variant.URI, outputPath, progress)
 	}
 	if strings.EqualFold(filepath.Ext(outputPath), ".m3u8") {
 		outputPath = strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + ".ts"
 	}
-	return downloader.NewHLSDownloader(client, downloader.HLSDownloaderConfig{Workers: 8}).Download(ctx, playlist, outputPath)
+	return downloader.NewHLSDownloader(client, downloader.HLSDownloaderConfig{Workers: 8, OnProgress: progress}).Download(ctx, playlist, outputPath)
 }
 
-func downloadDASH(ctx context.Context, client *util.HTTPClient, url, outputPath string) error {
+func downloadDASH(ctx context.Context, client *util.HTTPClient, url, outputPath string, progress downloader.ProgressCallback) error {
 	body, err := client.Get(ctx, url)
 	if err != nil {
 		return fmt.Errorf("fetch DASH manifest: %w", err)
@@ -151,7 +166,7 @@ func downloadDASH(ctx context.Context, client *util.HTTPClient, url, outputPath 
 	if strings.EqualFold(filepath.Ext(outputPath), ".mpd") {
 		outputPath = strings.TrimSuffix(outputPath, filepath.Ext(outputPath)) + ".mp4"
 	}
-	return downloader.NewDASHDownloader(client, downloader.DASHDownloaderConfig{Workers: 8}).Download(ctx, best, outputPath)
+	return downloader.NewDASHDownloader(client, downloader.DASHDownloaderConfig{Workers: 8, OnProgress: progress}).Download(ctx, best, outputPath)
 }
 
 func bestHLSVariant(playlist *parser.HLSPlaylist) *parser.HLSVariant {

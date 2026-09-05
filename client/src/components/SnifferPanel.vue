@@ -49,9 +49,9 @@ async function copyPairingCode() {
 async function download(stream: typeof queue.detectedStreams[number]) {
   error.value = '';
   const id = crypto.randomUUID();
-  queue.addDownload({ id, name: stream.name, progress: 12, status: 'downloading' });
+  queue.addDownload({ id, name: stream.name });
   try {
-    await downloadCaptured(stream.id, '');
+    await downloadCaptured(id, stream.id, '');
     queue.updateDownload(id, { progress: 100, status: 'completed' });
   } catch (reason) {
     queue.updateDownload(id, { progress: 0, status: 'failed' });
@@ -74,11 +74,11 @@ onBeforeUnmount(() => {
   <div class="panel-content">
     <div class="panel-heading"><div><p class="eyebrow">CAPTURE</p><h2>Detected streams</h2></div><span class="count-badge">{{ queue.detectedStreams.length }}</span>
     </div>
-    <div v-if="!pairingCode" class="empty-state capture-empty"><p>Capture from Firefox or Zen</p><span>Select Start capture. OpenDownload will show a code here to copy into the temporary browser add on.</span><button class="capture-action" type="button" :disabled="loading" @click="start"><PlayIcon aria-hidden="true" />{{ loading ? 'Starting' : 'Start capture' }}</button>
+    <div v-if="!pairingCode" class="empty-state capture-empty"><p>Capture from Firefox or Zen</p><span>Select Generate Pair Address. OpenDownload will show a address here to copy into the temporary browser add on.</span><button class="capture-action" type="button" :disabled="loading" @click="start"><PlayIcon aria-hidden="true" />{{ loading ? 'Starting' : 'Generate Pair Address' }}</button>
     </div>
     <div v-else class="capture-active">
       <div class="pairing-row"><input aria-label="Firefox pairing code" readonly :value="pairingCode" /><button class="icon-button compact" type="button" title="Copy pairing code" aria-label="Copy pairing code" @click="copyPairingCode"><ClipboardDocumentIcon aria-hidden="true" /></button><button class="icon-button compact" type="button" title="Stop capture" aria-label="Stop capture" @click="stop"><StopIcon aria-hidden="true" /></button></div>
-      <p class="capture-help">Paste this code into the add on, then play media in its active tab.</p>
+      <p class="capture-help">Paste this URL into the add on, then play media in its active tab.</p>
       <ul class="stream-list" v-if="queue.detectedStreams.length"><li v-for="stream in queue.detectedStreams" :key="stream.id"><div class="stream-summary"><strong>{{ stream.name }}</strong><span>{{ stream.host }} · {{ stream.type }}</span></div><button class="icon-button compact" type="button" title="Download captured stream" :aria-label="`Download ${stream.name}`" @click="download(stream)"><ArrowDownTrayIcon aria-hidden="true" /></button></li>
       </ul>
       <div v-else class="empty-state capture-waiting"><p>Waiting for media</p><span>Only requests from the tab selected in the add on are captured.</span></div>

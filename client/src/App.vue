@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useTheme } from './composables/useTheme';
 import { ArrowDownTrayIcon, LinkIcon, MoonIcon, SunIcon } from '@heroicons/vue/24/outline';
 import DownloadQueue from './components/DownloadQueue.vue';
 import SnifferPanel from './components/SnifferPanel.vue';
-import { useQueueStore } from './store/queue';
+import { useQueueStore, type DownloadProgressEvent } from './store/queue';
 import { useDownloadEngine } from './composables/useDownload';
+import { EventsOn } from '../wailsjs/wailsjs/runtime/runtime';
 
 const { isDark, toggleDark } = useTheme();
 const queue = useQueueStore();
@@ -22,10 +23,10 @@ async function submitDownload() {
   try { new URL(url); } catch { error.value = 'Paste a complete http or https media URL.'; return; }
   const id = crypto.randomUUID();
   const name = new URL(url).pathname.split('/').filter(Boolean).pop() || 'download';
-  queue.addDownload({ id, name, progress: 12, status: 'downloading' });
+  queue.addDownload({ id, name });
   isSubmitting.value = true;
   try {
-    await startDownload(url, outputPath.value.trim());
+    await startDownload(id, url, outputPath.value.trim());
     queue.updateDownload(id, { progress: 100, status: 'completed' });
     sourceUrl.value = '';
   } catch (reason) {
@@ -33,6 +34,12 @@ async function submitDownload() {
     error.value = reason instanceof Error ? reason.message : 'The download could not be started.';
   } finally { isSubmitting.value = false; }
 }
+
+let stopProgressListener: (() => void) | undefined;
+onMounted(() => {
+  stopProgressListener = EventsOn('download:progress', (progress: DownloadProgressEvent) => queue.updateProgress(progress));
+});
+onBeforeUnmount(() => stopProgressListener?.());
 </script>
 
 <template>

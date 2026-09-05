@@ -6,20 +6,19 @@ import (
 	"crypto/cipher"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/opendownload/opendownload/internal/parser"
 	"github.com/opendownload/opendownload/internal/util"
 )
 
 type HLSDownloaderConfig struct {
-	Workers int
-	Verbose bool
+	Workers    int
+	Verbose    bool
+	OnProgress ProgressCallback
 }
 
 type HLSDownloader struct {
@@ -38,7 +37,10 @@ func NewHLSDownloader(client *util.HTTPClient, config HLSDownloaderConfig) *HLSD
 func (d *HLSDownloader) Download(ctx context.Context, playlist *parser.HLSPlaylist, outPath string) error {
 	total := len(playlist.Segments)
 	var completed atomic.Int64
-	start := time.Now()
+	var downloaded atomic.Int64
+	reporter := newProgressReporter(d.config.OnProgress)
+	defer reporter.finish()
+	reporter.segments(0, 0, int64(total), true)
 
 	type indexedSegment struct {
 		index int
@@ -81,17 +83,12 @@ func (d *HLSDownloader) Download(ctx context.Context, playlist *parser.HLSPlayli
 			mu.Unlock()
 
 			done := completed.Add(1)
-			elapsed := time.Since(start).Seconds()
-			if elapsed == 0 {
-				elapsed = 0.001
-			}
-			pct := float64(done) / float64(total) * 100
-			fmt.Printf("\r  Segments: %d/%d (%.1f%%)   ", done, total, pct)
+			bytes := downloaded.Add(int64(len(data)))
+			reporter.segments(bytes, done, int64(total), done == int64(total))
 		}(i, seg)
 	}
 
 	wg.Wait()
-	fmt.Println()
 
 	if downloadErr != nil {
 		return downloadErr
@@ -197,16 +194,4 @@ func pkcs7Unpad(data []byte) []byte {
 		}
 	}
 	return data[:len(data)-padLen]
-}
-
-type hlsProgressWriter struct {
-	total     int
-	completed *atomic.Int64
-	out       io.Writer
-}
-
-func (w *hlsProgressWriter) update() {
-	done := w.completed.Load()
-	pct := float64(done) / float64(w.total) * 100
-	fmt.Fprintf(w.out, "\r  Segments: %d/%d (%.1f%%)   ", done, w.total, pct)
 }

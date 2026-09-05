@@ -4,9 +4,8 @@ OpenDownload is a local desktop app and command line tool for saving media you a
 
 ## Use the desktop app
 
-1. Build the client, then start Wails.
+1. Start the app in development with Wails.
    ```powershell
-   pnpm --dir client build
    wails dev
    ```
 2. Paste a direct media URL, HLS playlist, or DASH manifest into **Video or stream URL**.
@@ -15,31 +14,42 @@ OpenDownload is a local desktop app and command line tool for saving media you a
 
 The desktop workflow creates the destination folder when needed and selects the highest bandwidth video variant for HLS and DASH manifests. HLS output uses `.ts`; DASH output uses `.mp4` when the input URL ends in `.mpd`.
 
+## Build a portable Windows app
+
+Build the desktop application with Wails, then launch the generated release artifact:
+
+```powershell
+wails build
+.\build\bin\opendownload.exe
+```
+
+Do not use `go build .` for the desktop application. It does not supply the Wails desktop build tags and produces an executable that cannot open the app window.
+
 ## Use the CLI
 
 Build the CLI entry point:
 
 ```powershell
-go build -o opendownload.exe ./cmd/cli
+go build -o build\bin\opendownload-cli.exe ./cmd/cli
 ```
 
 Download a URL:
 
 ```powershell
-.\opendownload.exe download "https://example.com/video.mp4"
-.\opendownload.exe download "https://example.com/playlist.m3u8" --output .\downloads
+.\build\bin\opendownload-cli.exe download "https://example.com/video.mp4"
+.\build\bin\opendownload-cli.exe download "https://example.com/playlist.m3u8" --output .\downloads
 ```
 
 For protected content you are authorized to access, provide the required request information:
 
 ```powershell
-.\opendownload.exe download "https://example.com/playlist.m3u8" --header "Referer: https://example.com/" --cookie "session=value"
+.\build\bin\opendownload-cli.exe download "https://example.com/playlist.m3u8" --header "Referer: https://example.com/" --cookie "session=value"
 ```
 
 Inspect a URL before downloading:
 
 ```powershell
-.\opendownload.exe info "https://example.com/playlist.m3u8"
+.\build\bin\opendownload-cli.exe info "https://example.com/playlist.m3u8"
 ```
 
 ## Firefox and Zen capture
@@ -60,13 +70,13 @@ The pairing code expires after five minutes. Cookie and authorization values rem
 The CLI proxy remains available for advanced use cases:
 
 ```powershell
-.\opendownload.exe proxy run
+.\build\bin\opendownload-cli.exe proxy run
 ```
 
 Set your browser proxy to `127.0.0.1:9000`, load the page, and play the media. HTTPS request inspection requires a trusted local certificate and key:
 
 ```powershell
-.\opendownload.exe proxy run --ca-cert .\ca.crt --ca-key .\ca.key
+.\build\bin\opendownload-cli.exe proxy run --ca-cert .\ca.crt --ca-key .\ca.key
 ```
 
 Only install a certificate you control, remove it when you no longer need it, and comply with the site terms and applicable law. The Firefox and Zen add on path is the preferred desktop capture workflow because it preserves ordinary browser certificate verification.
@@ -82,6 +92,7 @@ Run validation in this order because Go embeds the generated client bundle:
 ```powershell
 pnpm --dir client build
 go test ./...
+wails build
 ```
 
 Project layout:

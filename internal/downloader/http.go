@@ -14,8 +14,9 @@ import (
 )
 
 type HTTPDownloaderConfig struct {
-	Workers int
-	Verbose bool
+	Workers    int
+	Verbose    bool
+	OnProgress ProgressCallback
 }
 
 type HTTPDownloader struct {
@@ -35,15 +36,18 @@ func (d *HTTPDownloader) Download(ctx context.Context, url, outPath string) erro
 	if err != nil {
 		return fmt.Errorf("failed to inspect URL: %w", err)
 	}
+	reporter := newProgressReporter(d.config.OnProgress)
+	defer reporter.finish()
+	reporter.bytes(0, size, true)
 
 	if size > 0 && resumable && d.config.Workers > 1 {
-		return d.downloadMultiSegment(ctx, url, outPath, size)
+		return d.downloadMultiSegment(ctx, url, outPath, size, reporter)
 	}
 
-	return d.downloadSingle(ctx, url, outPath, size)
+	return d.downloadSingle(ctx, url, outPath, size, reporter)
 }
 
-func (d *HTTPDownloader) downloadSingle(ctx context.Context, url, outPath string, totalSize int64) error {
+func (d *HTTPDownloader) downloadSingle(ctx context.Context, url, outPath string, totalSize int64, reporter *progressReporter) error {
 	resp, err := d.client.GetBody(ctx, url)
 	if err != nil {
 		return err
@@ -59,17 +63,17 @@ func (d *HTTPDownloader) downloadSingle(ctx context.Context, url, outPath string
 	}
 	defer file.Close()
 
-	progress := &progressWriter{total: totalSize, start: time.Now()}
+	progress := &progressWriter{report: func(downloaded int64) { reporter.bytes(downloaded, totalSize, false) }}
 	_, err = io.Copy(file, io.TeeReader(resp.Body, progress))
-	fmt.Println()
+	reporter.bytes(progress.written.Load(), totalSize, true)
 	return err
 }
 
-func (d *HTTPDownloader) downloadMultiSegment(ctx context.Context, url, outPath string, totalSize int64) error {
+func (d *HTTPDownloader) downloadMultiSegment(ctx context.Context, url, outPath string, totalSize int64, reporter *progressReporter) error {
 	workers := d.config.Workers
 	segmentSize := totalSize / int64(workers)
 	if segmentSize < 1024*1024 {
-		return d.downloadSingle(ctx, url, outPath, totalSize)
+		return d.downloadSingle(ctx, url, outPath, totalSize, reporter)
 	}
 
 	file, err := os.Create(outPath)
@@ -84,20 +88,20 @@ func (d *HTTPDownloader) downloadMultiSegment(ctx context.Context, url, outPath 
 	file.Close()
 
 	var downloaded atomic.Int64
-	progress := &progressWriter{total: totalSize, start: time.Now()}
 
 	done := make(chan struct{})
+	var progressWG sync.WaitGroup
+	progressWG.Add(1)
 	go func() {
+		defer progressWG.Done()
 		ticker := time.NewTicker(250 * time.Millisecond)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-done:
-				progress.printProgress(downloaded.Load())
-				fmt.Println()
 				return
 			case <-ticker.C:
-				progress.printProgress(downloaded.Load())
+				reporter.bytes(downloaded.Load(), totalSize, false)
 			}
 		}
 	}()
@@ -123,7 +127,9 @@ func (d *HTTPDownloader) downloadMultiSegment(ctx context.Context, url, outPath 
 
 	wg.Wait()
 	close(done)
+	progressWG.Wait()
 	close(errCh)
+	reporter.bytes(downloaded.Load(), totalSize, true)
 
 	for err := range errCh {
 		if err != nil {
@@ -181,36 +187,13 @@ func (d *HTTPDownloader) downloadSegment(ctx context.Context, url, outPath strin
 }
 
 type progressWriter struct {
-	total   int64
 	written atomic.Int64
-	start   time.Time
+	report  func(int64)
 }
 
 func (p *progressWriter) Write(data []byte) (int, error) {
 	n := len(data)
-	p.written.Add(int64(n))
-	p.printProgress(p.written.Load())
+	current := p.written.Add(int64(n))
+	p.report(current)
 	return n, nil
-}
-
-func (p *progressWriter) printProgress(current int64) {
-	elapsed := time.Since(p.start).Seconds()
-	if elapsed == 0 {
-		elapsed = 0.001
-	}
-
-	speed := float64(current) / elapsed
-
-	if p.total > 0 {
-		pct := float64(current) / float64(p.total) * 100
-		fmt.Printf("\r  %s / %s (%.1f%%) @ %s/s   ",
-			util.FormatBytes(current),
-			util.FormatBytes(p.total),
-			pct,
-			util.FormatBytes(int64(speed)))
-	} else {
-		fmt.Printf("\r  %s @ %s/s   ",
-			util.FormatBytes(current),
-			util.FormatBytes(int64(speed)))
-	}
 }
