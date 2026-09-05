@@ -1,11 +1,10 @@
 {
   "name": "OpenDownload",
-  "projectname": "OpenDownload",
   "outputfilename": "opendownload",
-  "frontend": {
-    "dir": "client",
-    "command": "pnpm run dev",
-    "install": "pnpm install",
-    "build": "pnpm run build"
-  }
+  "frontend:dir": "client",
+  "frontend:install": "pnpm install",
+  "frontend:build": "pnpm run build",
+  "frontend:dev:watcher": "pnpm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "wailsjsdir": "client/wailsjs"
 }

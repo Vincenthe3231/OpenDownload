@@ -16,10 +16,10 @@ import (
 )
 
 var (
-	sniffPort    int
+	sniffPort         int
 	sniffAutoDownload bool
-	caCertPath   string
-	caKeyPath    string
+	caCertPath        string
+	caKeyPath         string
 )
 
 var sniffCmd = &cobra.Command{
@@ -32,12 +32,31 @@ downloaded.`,
 	RunE: runSniff,
 }
 
+var proxyCmd = &cobra.Command{
+	Use:   "proxy",
+	Short: "Manage the local capture proxy",
+}
+
+var proxyRunCmd = &cobra.Command{
+	Use:   "run",
+	Short: "Start the local capture proxy",
+	Long:  sniffCmd.Long,
+	RunE:  runSniff,
+}
+
 func init() {
-	sniffCmd.Flags().IntVarP(&sniffPort, "port", "p", 8080, "proxy listen port")
-	sniffCmd.Flags().BoolVar(&sniffAutoDownload, "auto", false, "automatically download detected streams")
-	sniffCmd.Flags().StringVar(&caCertPath, "ca-cert", "", "path to CA certificate for HTTPS interception")
-	sniffCmd.Flags().StringVar(&caKeyPath, "ca-key", "", "path to CA private key for HTTPS interception")
+	addProxyRunFlags(sniffCmd)
+	addProxyRunFlags(proxyRunCmd)
+	proxyCmd.AddCommand(proxyRunCmd)
 	rootCmd.AddCommand(sniffCmd)
+	rootCmd.AddCommand(proxyCmd)
+}
+
+func addProxyRunFlags(cmd *cobra.Command) {
+	cmd.Flags().IntVarP(&sniffPort, "port", "p", 9000, "proxy listen port")
+	cmd.Flags().BoolVar(&sniffAutoDownload, "auto", false, "automatically download detected streams")
+	cmd.Flags().StringVar(&caCertPath, "ca-cert", "", "path to CA certificate for HTTPS interception")
+	cmd.Flags().StringVar(&caKeyPath, "ca-key", "", "path to CA private key for HTTPS interception")
 }
 
 func runSniff(cmd *cobra.Command, args []string) error {

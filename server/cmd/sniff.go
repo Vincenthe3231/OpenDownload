@@ -16,10 +16,10 @@ import (
 )
 
 var (
-	sniffPort    int
+	sniffPort         int
 	sniffAutoDownload bool
-	caCertPath   string
-	caKeyPath    string
+	caCertPath        string
+	caKeyPath         string
 )
 
 var sniffCmd = &cobra.Command{
@@ -33,7 +33,7 @@ downloaded.`,
 }
 
 func init() {
-	sniffCmd.Flags().IntVarP(&sniffPort, "port", "p", 8080, "proxy listen port")
+	sniffCmd.Flags().IntVarP(&sniffPort, "port", "p", 9000, "proxy listen port")
 	sniffCmd.Flags().BoolVar(&sniffAutoDownload, "auto", false, "automatically download detected streams")
 	sniffCmd.Flags().StringVar(&caCertPath, "ca-cert", "", "path to CA certificate for HTTPS interception")
 	sniffCmd.Flags().StringVar(&caKeyPath, "ca-key", "", "path to CA private key for HTTPS interception")

@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 
 	"github.com/opendownload/opendownload/server/internal/downloader"
-	"github.com/opendownload/opendownload/server/internal/parser"
 	"github.com/opendownload/opendownload/server/internal/util"
 )
 

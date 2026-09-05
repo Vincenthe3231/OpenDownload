@@ -1,88 +1,89 @@
 # OpenDownload
 
-OpenDownload is a high-performance, cross-platform CLI tool for network traffic interception and video stream downloading. It enables seamless downloading of media from direct URLs, HLS (.m3u8), and DASH (.mpd) streams, with robust support for bypassing CDN protection through cookie and header injection.
+OpenDownload is a local desktop app and command line tool for saving media you are allowed to download. It supports direct HTTP and HTTPS files, HLS playlists (`.m3u8`), and DASH manifests (`.mpd`).
 
-## Features
+## Use the desktop app
 
-- **Protocol Support**: Direct HTTP(S), HLS (including AES-128 encrypted), and DASH.
-- **Acceleration**: Multi-threaded, segmented downloads with range-based resume support.
-- **Traffic Interception**: Built-in HTTP/HTTPS proxy to sniff and auto-detect media streams in your browser.
-- **Robustness**: Header and Cookie injection to bypass site-specific protection.
-- **Post-Processing**: Automatic integration with FFmpeg for muxing and format conversion.
-- **Lightweight**: Zero runtime dependencies, single static binary (written in Go).
+1. Build the client, then start Wails.
+   ```powershell
+   pnpm --dir client build
+   wails dev
+   ```
+2. Paste a direct media URL, HLS playlist, or DASH manifest into **Video or stream URL**.
+3. Optionally enter a destination folder. Leaving it empty saves to `./download`.
+4. Select **Download** and follow the status in the Downloads panel.
 
-## Installation
+The desktop workflow creates the destination folder when needed and selects the highest bandwidth video variant for HLS and DASH manifests. HLS output uses `.ts`; DASH output uses `.mp4` when the input URL ends in `.mpd`.
 
-Ensure you have [Go](https://go.dev/doc/install) installed.
+## Use the CLI
 
-```bash
-# Clone the repository
-git clone https://github.com/opendownload/opendownload
-cd opendownload
+Build the CLI entry point:
 
-# Build the binary
-go build -o opendownload .
+```powershell
+go build -o opendownload.exe ./cmd/cli
 ```
 
-## Usage
+Download a URL:
 
-### 1. Downloading Video Streams
-Download a stream directly by providing the URL. Use headers/cookies to bypass protection on sites like `missav.ws`.
-
-```bash
-# Basic download
-./opendownload download "https://example.com/stream.m3u8"
-
-# With authentication
-./opendownload download "https://example.com/playlist.m3u8" \
-  --header "Referer: https://protected-site.com/" \
-  --cookie "session_id=your_cookie_value"
+```powershell
+.\opendownload.exe download "https://example.com/video.mp4"
+.\opendownload.exe download "https://example.com/playlist.m3u8" --output .\downloads
 ```
 
-### 2. Inspecting Streams
-List available formats, qualities, and resolution info without downloading.
+For protected content you are authorized to access, provide the required request information:
 
-```bash
-./opendownload info "https://example.com/stream.m3u8"
+```powershell
+.\opendownload.exe download "https://example.com/playlist.m3u8" --header "Referer: https://example.com/" --cookie "session=value"
 ```
 
-### 3. Sniffing Network Traffic
-Start a local proxy, configure your browser to use it, and browse normally to detect media.
+Inspect a URL before downloading:
 
-```bash
-# Start proxy on port 9000
-./opendownload sniff -p 9000
-
-# Enable HTTPS interception (requires generating a local CA)
-./opendownload sniff -p 9000 --ca-cert ca.crt --ca-key ca.key -v
+```powershell
+.\opendownload.exe info "https://example.com/playlist.m3u8"
 ```
 
-## Configuration
+## Capture workflow
 
-OpenDownload supports configuration via a `.opendownload.yaml` file, environment variables (prefixed with `OD_`), or command-line flags.
+The current desktop client does not yet control the capture proxy. Use the CLI to discover streams, then paste the detected URL into the app or download it through the CLI.
 
-**Order of precedence:** CLI Flags > Env Vars > Config File.
-
-Example `.opendownload.yaml`:
-```yaml
-output: ./downloads
-workers: 8
-proxy: http://127.0.0.1:9000
+```powershell
+.\opendownload.exe proxy run
 ```
 
-## Development
+Set your browser proxy to `127.0.0.1:9000`, load the page, and play the media. For HTTPS interception, pass a trusted local certificate and key:
 
-The project follows a modular, interface-based architecture:
-- `cmd/`: CLI command definitions (Cobra).
-- `internal/downloader/`: Concurrent download engines (HTTP, HLS, DASH).
-- `internal/parser/`: Manifest parsers (M3U8, MPD).
-- `internal/sniffer/`: MITM proxy and media detection logic.
-- `internal/muxer/`: FFmpeg wrappers for post-processing.
+```powershell
+.\opendownload.exe proxy run --ca-cert .\ca.crt --ca-key .\ca.key
+```
 
-To run tests:
-```bash
+Only install a certificate you control, remove it when you no longer need it, and comply with the site terms and applicable law.
+
+## Requirements and development
+
+- Go 1.26 or later
+- Node.js with pnpm
+- Wails CLI for the desktop application: `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
+
+Run validation in this order because Go embeds the generated client bundle:
+
+```powershell
+pnpm --dir client build
 go test ./...
 ```
 
+Project layout:
+
+- `cmd/` contains the Cobra CLI.
+- `internal/` contains HTTP, HLS, DASH, detection, and utility packages.
+- `client/` contains the Vue desktop interface.
+- `app.go` is the Wails bridge used by the desktop application.
+
+## Current limitations
+
+- DASH downloads select the best video representation. Audio track merging is not implemented.
+- Capture proxy controls and live progress are CLI only.
+- Browser cookie import and custom headers are CLI only.
+
 ## License
+
 MIT

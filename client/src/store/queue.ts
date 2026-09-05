@@ -20,5 +20,9 @@ export const useQueueStore = defineStore('queue', {
   actions: {
     addDownload(download: DownloadItem) { this.activeDownloads.push(download); },
     addDetected(stream: DetectedStream) { this.detectedStreams.push(stream); },
+    updateDownload(id: string, patch: Partial<DownloadItem>) {
+      const download = this.activeDownloads.find((item) => item.id === id);
+      if (download) Object.assign(download, patch);
+    },
   },
 });

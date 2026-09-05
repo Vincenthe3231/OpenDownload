@@ -76,7 +76,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&outputDir, "output", "o", "./download", "output directory for downloads")
 	rootCmd.PersistentFlags().IntVarP(&workers, "workers", "w", 8, "number of concurrent download workers")
 	rootCmd.PersistentFlags().StringVarP(&userAgent, "user-agent", "U", "", "custom User-Agent string")
-	rootCmd.PersistentFlags().StringVarP(&proxyURL, "proxy", "x", "", "proxy URL (e.g. http://127.0.0.1:8080)")
+	rootCmd.PersistentFlags().StringVarP(&proxyURL, "proxy", "x", "", "proxy URL (e.g. http://127.0.0.1:9000)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "config file path")
 
@@ -89,7 +89,7 @@ Examples:
   opendownload download https://example.com/video.mp4
   opendownload download https://example.com/stream.m3u8
   opendownload info https://example.com/stream.m3u8
-  opendownload sniff --port 8080
+  opendownload sniff --port 9000
 
 `, rootCmd.HelpTemplate()))
 }
