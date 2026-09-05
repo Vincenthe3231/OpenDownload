@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/opendownload/opendownload/internal/capture"
 	"github.com/opendownload/opendownload/internal/downloader"
@@ -17,8 +18,10 @@ import (
 
 // App struct
 type App struct {
-	ctx     context.Context
-	capture *capture.Manager
+	ctx       context.Context
+	capture   *capture.Manager
+	limiter   *util.ConnectionLimiter
+	downloads sync.Map
 }
 
 type downloadProgressEvent struct {
@@ -26,9 +29,20 @@ type downloadProgressEvent struct {
 	downloader.Progress
 }
 
+type downloadStateEvent struct {
+	ID      string `json:"id"`
+	State   string `json:"state"`
+	Message string `json:"message,omitempty"`
+}
+
+type downloadDestinationEvent struct {
+	ID   string `json:"id"`
+	Path string `json:"path"`
+}
+
 // NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{capture: capture.NewManager()}
+	return &App{capture: capture.NewManager(), limiter: util.NewConnectionLimiter(12)}
 }
 
 // startup is called when the app starts. The context is saved
@@ -43,7 +57,19 @@ func (a *App) shutdown(context.Context) {
 
 // Download downloads direct media, HLS playlists, or DASH manifests to outputDir.
 func (a *App) Download(jobID string, url string, outputDir string) error {
-	return a.download(jobID, url, outputDir, nil)
+	return a.download(a.ctx, jobID, url, outputDir, nil)
+}
+
+// QueueDownload returns after scheduling work. Progress and state are emitted
+// through the Wails event bridge so the desktop can run several jobs at once.
+func (a *App) QueueDownload(jobID string, url string, outputDir string) error {
+	return a.queue(jobID, func(ctx context.Context) error { return a.download(ctx, jobID, url, outputDir, nil) })
+}
+
+func (a *App) CancelDownload(jobID string) {
+	if value, ok := a.downloads.Load(jobID); ok {
+		value.(context.CancelFunc)()
+	}
 }
 
 func (a *App) StartFirefoxCapture() (capture.Pairing, error) {
@@ -63,7 +89,7 @@ func (a *App) DownloadCapturedStream(jobID string, capturedStreamID string, outp
 	if !ok {
 		return fmt.Errorf("captured stream is no longer available")
 	}
-	if err := a.download(jobID, stream.URL, outputDir, headers); err != nil {
+	if err := a.download(a.ctx, jobID, stream.URL, outputDir, headers); err != nil {
 		if strings.Contains(err.Error(), "HTTP 401") || strings.Contains(err.Error(), "HTTP 403") {
 			return fmt.Errorf("stream access was rejected; capture a fresh request and try again: %w", err)
 		}
@@ -72,7 +98,46 @@ func (a *App) DownloadCapturedStream(jobID string, capturedStreamID string, outp
 	return nil
 }
 
-func (a *App) download(jobID string, url string, outputDir string, headers map[string]string) error {
+func (a *App) QueueCapturedStream(jobID string, capturedStreamID string, outputDir string) error {
+	stream, headers, ok := a.capture.Get(capturedStreamID)
+	if !ok {
+		return fmt.Errorf("captured stream is no longer available")
+	}
+	return a.queue(jobID, func(ctx context.Context) error { return a.download(ctx, jobID, stream.URL, outputDir, headers) })
+}
+
+func (a *App) queue(jobID string, work func(context.Context) error) error {
+	if jobID == "" {
+		return fmt.Errorf("download id is required")
+	}
+	baseCtx := a.ctx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+	ctx, cancel := context.WithCancel(baseCtx)
+	if _, loaded := a.downloads.LoadOrStore(jobID, cancel); loaded {
+		cancel()
+		return fmt.Errorf("a download with this id is already queued")
+	}
+	a.emitState(jobID, "queued", "")
+	go func() {
+		a.emitState(jobID, "downloading", "")
+		err := work(ctx)
+		switch {
+		case err == nil:
+			a.emitState(jobID, "completed", "")
+		case ctx.Err() != nil:
+			a.emitState(jobID, "cancelled", "")
+		default:
+			a.emitState(jobID, "failed", err.Error())
+		}
+		a.downloads.Delete(jobID)
+		cancel()
+	}()
+	return nil
+}
+
+func (a *App) download(ctx context.Context, jobID string, url string, outputDir string, headers map[string]string) error {
 	url = strings.TrimSpace(url)
 	parsedURL, err := urlpkg.Parse(url)
 	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
@@ -85,33 +150,59 @@ func (a *App) download(jobID string, url string, outputDir string, headers map[s
 	client := util.NewHTTPClient(util.HTTPClientConfig{
 		Verbose: false,
 		Headers: headers,
+		Limiter: a.limiter,
 	})
 
 	if outputDir == "" {
-		outputDir = "download"
+		outputDir, err = defaultDownloadDir()
+		if err != nil {
+			return err
+		}
 	}
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return fmt.Errorf("create output folder: %w", err)
 	}
 	outputPath := filepath.Join(outputDir, util.FilenameFromURL(url))
+	a.emitDestination(jobID, outputPath)
 	progress := a.progressReporter(jobID)
 
 	switch strings.ToLower(filepath.Ext(parsedURL.Path)) {
 	case ".m3u8":
-		return downloadHLS(a.ctx, client, url, outputPath, progress)
+		return downloadHLS(ctx, client, url, outputPath, progress)
 	case ".mpd":
-		return downloadDASH(a.ctx, client, url, outputPath, progress)
+		return downloadDASH(ctx, client, url, outputPath, progress)
 	default:
 		eng := downloader.NewHTTPDownloader(client, downloader.HTTPDownloaderConfig{Workers: 8, OnProgress: progress})
-		return eng.Download(a.ctx, url, outputPath)
+		return eng.Download(ctx, url, outputPath)
 	}
+}
+
+func defaultDownloadDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("find Windows user folder: %w", err)
+	}
+	return filepath.Join(home, "Downloads"), nil
 }
 
 func (a *App) progressReporter(jobID string) downloader.ProgressCallback {
 	return func(progress downloader.Progress) {
+		progress.ActiveConnections = a.limiter.Active()
 		if a.ctx != nil {
 			runtime.EventsEmit(a.ctx, "download:progress", downloadProgressEvent{ID: jobID, Progress: progress})
 		}
+	}
+}
+
+func (a *App) emitState(jobID, state, message string) {
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "download:state", downloadStateEvent{ID: jobID, State: state, Message: message})
+	}
+}
+
+func (a *App) emitDestination(jobID, outputPath string) {
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "download:destination", downloadDestinationEvent{ID: jobID, Path: outputPath})
 	}
 }
 

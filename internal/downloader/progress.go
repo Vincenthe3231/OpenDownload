@@ -12,13 +12,14 @@ const progressInterval = 250 * time.Millisecond
 
 // Progress describes the current transfer state for a download.
 type Progress struct {
-	DownloadedBytes int64   `json:"downloadedBytes"`
-	TotalBytes      int64   `json:"totalBytes"`
-	CompletedUnits  int64   `json:"completedUnits"`
-	TotalUnits      int64   `json:"totalUnits"`
-	BytesPerSecond  float64 `json:"bytesPerSecond"`
-	ETASeconds      float64 `json:"etaSeconds"`
-	HasETA          bool    `json:"hasEta"`
+	DownloadedBytes   int64   `json:"downloadedBytes"`
+	TotalBytes        int64   `json:"totalBytes"`
+	CompletedUnits    int64   `json:"completedUnits"`
+	TotalUnits        int64   `json:"totalUnits"`
+	BytesPerSecond    float64 `json:"bytesPerSecond"`
+	ETASeconds        float64 `json:"etaSeconds"`
+	HasETA            bool    `json:"hasEta"`
+	ActiveConnections int64   `json:"activeConnections"`
 }
 
 // ProgressCallback receives periodic download progress updates.

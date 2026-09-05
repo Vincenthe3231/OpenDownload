@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import type { DownloadItem } from '../store/queue';
 
 const props = defineProps<{ item: DownloadItem }>();
+defineEmits<{ cancel: [id: string] }>();
 
 const hasKnownProgress = computed(() => props.item.totalBytes > 0 || props.item.totalUnits > 0);
 const progressPercent = computed(() => {
@@ -13,14 +14,17 @@ const progressPercent = computed(() => {
 const statusText = computed(() => props.item.status[0].toUpperCase() + props.item.status.slice(1));
 const progressDetail = computed(() => {
   const item = props.item;
+  if (item.status === 'queued') return 'Waiting for an available transfer connection';
   if (item.status === 'completed') return item.totalUnits > 0 ? `${item.totalUnits} segments saved` : `${formatBytes(item.downloadedBytes)} saved`;
-  if (item.status === 'failed') return item.downloadedBytes > 0 ? `Stopped after ${formatBytes(item.downloadedBytes)}` : 'Download failed';
+  if (item.status === 'cancelled') return 'Download cancelled';
+  if (item.status === 'failed') return item.message || (item.downloadedBytes > 0 ? `Stopped after ${formatBytes(item.downloadedBytes)}` : 'Download failed');
 
   const detail: string[] = [];
   if (item.totalBytes > 0) detail.push(`${formatBytes(item.downloadedBytes)} of ${formatBytes(item.totalBytes)}`);
   else if (item.totalUnits > 0) detail.push(`${item.completedUnits} of ${item.totalUnits} segments`);
   else detail.push(`${formatBytes(item.downloadedBytes)} received`);
   if (item.bytesPerSecond > 0) detail.push(`${formatBytes(item.bytesPerSecond)}/s`);
+  if (item.activeConnections > 0) detail.push(`${item.activeConnections} active connections`);
   if (item.hasEta) detail.push(`${formatDuration(item.etaSeconds)} remaining`);
   return detail.join(' · ');
 });
@@ -49,7 +53,8 @@ function formatDuration(value: number) {
         <div class="progress-value" :class="[item.status, { indeterminate: item.status === 'downloading' && !hasKnownProgress }]" :style="{ width: hasKnownProgress ? `${progressPercent}%` : undefined }"></div>
       </div>
       <p class="progress-detail">{{ progressDetail }}</p>
+      <p v-if="item.outputPath" class="progress-detail output-path" :title="item.outputPath">Saved to {{ item.outputPath }}</p>
     </div>
-    <span class="status-pill" :class="item.status" aria-live="polite">{{ statusText }}</span>
+    <div class="download-actions"><button v-if="item.status === 'queued' || item.status === 'downloading'" class="icon-button compact" type="button" @click="$emit('cancel', item.id)">Cancel</button><span class="status-pill" :class="item.status" aria-live="polite">{{ statusText }}</span></div>
   </div>
 </template>

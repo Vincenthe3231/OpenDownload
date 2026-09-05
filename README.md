@@ -9,28 +9,28 @@ OpenDownload is a local desktop app and command line tool for saving media you a
    wails dev
    ```
 2. Paste a direct media URL, HLS playlist, or DASH manifest into **Video or stream URL**.
-3. Optionally enter a destination folder. Leaving it empty saves to `./download`.
+3. Optionally enter a destination folder. Leaving it empty saves to your Windows Downloads folder.
 4. Select **Download** and follow the status in the Downloads panel.
 
 The desktop workflow creates the destination folder when needed and selects the highest bandwidth video variant for HLS and DASH manifests. HLS output uses `.ts`; DASH output uses `.mp4` when the input URL ends in `.mpd`.
 
 ## Build a portable Windows app
 
-Build the desktop application with Wails, then launch the generated release artifact:
+The desktop build is the normal release path. Run the build helper without arguments, then launch the generated release artifact:
 
 ```powershell
-wails build
+.\scripts\build.ps1
 .\build\bin\opendownload.exe
 ```
 
-Do not use `go build .` for the desktop application. It does not supply the Wails desktop build tags and produces an executable that cannot open the app window.
+Do not use `go build .` or `go build -o opendownload.exe .` for the desktop application. Wails performs the frontend build, binding generation, Windows resource packaging, and production executable build.
 
-## Use the CLI
+## Advanced CLI build
 
 Build the CLI entry point:
 
 ```powershell
-go build -o build\bin\opendownload-cli.exe ./cmd/cli
+.\scripts\build.ps1 -Target CLI
 ```
 
 Download a URL:
@@ -63,11 +63,13 @@ The desktop app can capture authorized media requests from Firefox or Zen withou
 5. Open the browser add on, paste that code into **Code from OpenDownload desktop app**, then select **Start capture** while the streaming tab is active.
 6. Play the media, then select a detected stream in OpenDownload to download it with the captured request context.
 
-The pairing code expires after five minutes. Cookie and authorization values remain in memory for the active desktop session, are not displayed or logged, and are cleared when capture stops or the app exits. The add on requests broad host access because streams can come from a separate CDN domain, but it records only the active tab you explicitly selected.
+The pairing code combines a system selected loopback port with a fresh 256 bit cryptographic token. It is accepted only from `127.0.0.1` and expires for initial pairing after five minutes. The token is never written to disk or displayed in captured stream metadata. Cookie and authorization values remain in memory for the active desktop session, are not displayed or logged, and are cleared when capture stops or the app exits.
+
+This protects against network access and token guessing. It does not protect against another local process that obtains the active pairing code, so stop capture when you are finished. The add on requests broad host access because streams can come from a separate CDN domain, but it records only the active tab you explicitly selected.
 
 ## Proxy capture
 
-The CLI proxy remains available for advanced use cases:
+The CLI proxy is an optional fallback for advanced use cases. Prefer the Firefox and Zen pairing flow above because it preserves ordinary browser certificate verification.
 
 ```powershell
 .\build\bin\opendownload-cli.exe proxy run

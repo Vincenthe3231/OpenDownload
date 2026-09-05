@@ -4,7 +4,7 @@ export interface DownloadItem {
   id: string;
   name: string;
   progress: number;
-  status: 'pending' | 'downloading' | 'completed' | 'failed';
+  status: 'queued' | 'downloading' | 'completed' | 'failed' | 'cancelled';
 	downloadedBytes: number;
 	totalBytes: number;
 	completedUnits: number;
@@ -12,6 +12,9 @@ export interface DownloadItem {
 	bytesPerSecond: number;
 	etaSeconds: number;
 	hasEta: boolean;
+	activeConnections: number;
+	message: string;
+	outputPath: string;
 }
 
 export interface DownloadProgressEvent {
@@ -23,7 +26,11 @@ export interface DownloadProgressEvent {
 	bytesPerSecond: number;
 	etaSeconds: number;
 	hasEta: boolean;
+	activeConnections: number;
 }
+
+export interface DownloadStateEvent { id: string; state: DownloadItem['status']; message: string; }
+export interface DownloadDestinationEvent { id: string; path: string; }
 
 export interface DetectedStream {
 	id: string;
@@ -43,7 +50,7 @@ export const useQueueStore = defineStore('queue', {
 		this.activeDownloads.push({
 			...download,
 			progress: 0,
-			status: 'downloading',
+			status: 'queued',
 			downloadedBytes: 0,
 			totalBytes: 0,
 			completedUnits: 0,
@@ -51,6 +58,9 @@ export const useQueueStore = defineStore('queue', {
 			bytesPerSecond: 0,
 			etaSeconds: 0,
 			hasEta: false,
+			activeConnections: 0,
+			message: '',
+			outputPath: '',
 		});
 	},
     addDetected(stream: DetectedStream) { this.detectedStreams.push(stream); },
@@ -69,6 +79,12 @@ export const useQueueStore = defineStore('queue', {
 					? Math.min(100, update.completedUnits / update.totalUnits * 100)
 					: 0,
 		});
+	},
+	updateState(update: DownloadStateEvent) {
+		this.updateDownload(update.id, { status: update.state, message: update.message });
+	},
+	updateDestination(update: DownloadDestinationEvent) {
+		this.updateDownload(update.id, { outputPath: update.path });
 	},
   },
 });

@@ -2,9 +2,7 @@ package main
 
 import (
 	"embed"
-	"os"
 
-	"github.com/opendownload/opendownload/cmd"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -14,13 +12,6 @@ import (
 var assets embed.FS
 
 func main() {
-	if len(os.Args) > 1 {
-		if err := cmd.Execute(); err != nil {
-			os.Exit(1)
-		}
-		return
-	}
-
 	app := NewApp()
 
 	err := wails.Run(&options.App{
@@ -30,7 +21,7 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		OnStartup: app.startup,
+		OnStartup:  app.startup,
 		OnShutdown: app.shutdown,
 		Bind: []interface{}{
 			app,

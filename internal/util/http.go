@@ -11,6 +11,8 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -30,6 +32,61 @@ type HTTPClientConfig struct {
 	Headers    map[string]string
 	Cookie     string
 	CookieFile string
+	Limiter    *ConnectionLimiter
+}
+
+// ConnectionLimiter caps simultaneous HTTP response bodies across clients.
+// A nil limiter leaves the client unconstrained for standalone CLI use.
+type ConnectionLimiter struct {
+	slots  chan struct{}
+	active atomic.Int64
+}
+
+func NewConnectionLimiter(limit int) *ConnectionLimiter {
+	if limit <= 0 {
+		return nil
+	}
+	return &ConnectionLimiter{slots: make(chan struct{}, limit)}
+}
+
+func (l *ConnectionLimiter) acquire(ctx context.Context) error {
+	if l == nil {
+		return nil
+	}
+	select {
+	case l.slots <- struct{}{}:
+		l.active.Add(1)
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (l *ConnectionLimiter) release() {
+	if l == nil {
+		return
+	}
+	<-l.slots
+	l.active.Add(-1)
+}
+
+func (l *ConnectionLimiter) Active() int64 {
+	if l == nil {
+		return 0
+	}
+	return l.active.Load()
+}
+
+type limitedReadCloser struct {
+	io.ReadCloser
+	once    sync.Once
+	release func()
+}
+
+func (b *limitedReadCloser) Close() error {
+	err := b.ReadCloser.Close()
+	b.once.Do(b.release)
+	return err
 }
 
 type HTTPClient struct {
@@ -99,16 +156,36 @@ func (c *HTTPClient) Do(req *http.Request) (*http.Response, error) {
 	for attempt := 0; attempt <= c.config.MaxRetries; attempt++ {
 		if attempt > 0 {
 			backoff := time.Duration(1<<uint(attempt-1)) * time.Second
-			time.Sleep(backoff)
+			select {
+			case <-time.After(backoff):
+			case <-req.Context().Done():
+				return nil, req.Context().Err()
+			}
 		}
 
+		if err = c.config.Limiter.acquire(req.Context()); err != nil {
+			return nil, err
+		}
 		resp, err = c.client.Do(req)
+		if err != nil {
+			if resp != nil {
+				resp.Body.Close()
+			}
+			c.config.Limiter.release()
+			resp = nil
+		}
 		if err == nil && resp.StatusCode < 500 {
+			if c.config.Limiter != nil {
+				resp.Body = &limitedReadCloser{ReadCloser: resp.Body, release: c.config.Limiter.release}
+			}
 			return resp, nil
 		}
 
 		if resp != nil {
 			resp.Body.Close()
+			if c.config.Limiter != nil {
+				c.config.Limiter.release()
+			}
 		}
 	}
 
@@ -167,7 +244,7 @@ func (c *HTTPClient) GetRange(ctx context.Context, rawURL string, start, end int
 		return nil, err
 	}
 
-	if end > 0 {
+	if end >= start {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
 	} else {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", start))

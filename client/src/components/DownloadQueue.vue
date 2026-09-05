@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { useQueueStore } from '../store/queue';
 import DownloadItem from './DownloadItem.vue';
+import { useDownloadEngine } from '../composables/useDownload';
 
 const queue = useQueueStore();
+const { cancelDownload } = useDownloadEngine();
 </script>
 
 <template>
@@ -11,6 +13,6 @@ const queue = useQueueStore();
     </div>
     <div v-if="queue.activeDownloads.length === 0" class="empty-state"><p>No downloads yet</p><span>Your recent downloads will appear here.</span>
     </div>
-    <DownloadItem v-for="item in queue.activeDownloads" :key="item.id" :item="item" />
+    <DownloadItem v-for="item in queue.activeDownloads" :key="item.id" :item="item" @cancel="cancelDownload" />
   </div>
 </template>

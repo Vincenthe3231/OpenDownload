@@ -1,9 +1,11 @@
-import { Download } from '../../wailsjs/wailsjs/go/main/App';
+import { CancelDownload, QueueDownload } from '../../wailsjs/wailsjs/go/main/App';
 
 export const useDownloadEngine = () => {
-    const startDownload = async (id: string, url: string, path: string): Promise<void> => {
-        await Download(id, url, path);
+    const queueDownload = async (id: string, url: string, path: string): Promise<void> => {
+        await QueueDownload(id, url, path);
     };
 
-    return { startDownload };
+    const cancelDownload = (id: string) => CancelDownload(id);
+
+    return { queueDownload, cancelDownload };
 };
