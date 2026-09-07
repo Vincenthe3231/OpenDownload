@@ -5,16 +5,30 @@ const state = document.querySelector('#state');
 const error = document.querySelector('#error');
 
 function render(status) {
-  pairing.hidden = status.active;
-  document.querySelector('label').hidden = status.active;
-  start.hidden = status.active;
+  pairing.hidden = false;
+  document.querySelector('label').hidden = false;
+  start.hidden = false;
   stop.hidden = !status.active;
-  state.textContent = status.active ? 'Capturing only this tab.' : 'Open OpenDownload, select Start capture in Detected streams, then paste its generated code here.';
+  start.textContent = status.active ? 'Use new pairing code' : 'Start capture';
+  state.textContent = status.active ? 'Capturing only this tab. Paste a fresh code here to replace it.' : 'Open OpenDownload, select Generate pairing code in Detected streams, then paste its generated code here.';
   error.textContent = status.error || '';
 }
 
 async function refresh() {
-  render(await browser.runtime.sendMessage({ type: 'status' }));
+  try {
+    render(await browser.runtime.sendMessage({ type: 'status' }));
+  } catch (reason) {
+    showConnectionError(reason);
+  }
+}
+
+function showConnectionError(reason) {
+  const message = reason && reason.message ? reason.message : '';
+  if (message.includes('Receiving end does not exist')) {
+    error.textContent = 'The add on background is unavailable. Open about:debugging, reload OpenDownload Capture, then close and reopen this panel.';
+    return;
+  }
+  error.textContent = message || 'Could not communicate with the OpenDownload add on.';
 }
 
 start.addEventListener('click', async () => {
@@ -22,9 +36,15 @@ start.addEventListener('click', async () => {
   try {
     render(await browser.runtime.sendMessage({ type: 'start', code: pairing.value }));
   } catch (reason) {
-    error.textContent = reason.message || 'Could not start capture.';
+    showConnectionError(reason);
   }
 });
 
-stop.addEventListener('click', async () => render(await browser.runtime.sendMessage({ type: 'stop' })));
+stop.addEventListener('click', async () => {
+  try {
+    render(await browser.runtime.sendMessage({ type: 'stop' }));
+  } catch (reason) {
+    showConnectionError(reason);
+  }
+});
 refresh();

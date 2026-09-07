@@ -12,12 +12,23 @@ const capture = useCaptureStore();
 const downloads = useDownloadStore();
 const pairingCode = ref('');
 const pairingExpiresAt = ref('');
+const currentTime = ref(Date.now());
 const error = ref('');
 const loading = ref(false);
 let eventSubscription: CaptureEventSubscription | undefined;
+let expiryTimer: ReturnType<typeof setInterval> | undefined;
 
 const isCaptureActive = computed(() => capture.session.active && pairingCode.value !== '');
-const expiresText = computed(() => pairingExpiresAt.value ? `Pairing code expires at ${formatDateTime(pairingExpiresAt.value)}.` : '');
+const pairingExpired = computed(() => {
+  const expiresAt = Date.parse(pairingExpiresAt.value);
+  return !Number.isNaN(expiresAt) && currentTime.value >= expiresAt;
+});
+const expiresText = computed(() => {
+  if (!pairingExpiresAt.value) return '';
+  return pairingExpired.value
+    ? 'This pairing code has expired. Generate a fresh code below without restarting OpenDownload.'
+    : `Pairing code expires at ${formatDateTime(pairingExpiresAt.value)}.`;
+});
 
 watch(
   () => capture.session.active,
@@ -64,6 +75,9 @@ async function download(stream: CaptureStreamSummary): Promise<void> {
 }
 
 onMounted(() => {
+  expiryTimer = setInterval(() => {
+    currentTime.value = Date.now();
+  }, 1000);
   eventSubscription = subscribeToCaptureEvents(capture);
   void eventSubscription.hydrate().catch(() => {
     error.value = 'Could not restore captured streams.';
@@ -71,6 +85,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  if (expiryTimer !== undefined) clearInterval(expiryTimer);
   eventSubscription?.dispose();
 });
 </script>
@@ -84,6 +99,7 @@ onBeforeUnmount(() => {
     <div v-else class="capture-active">
       <div class="pairing-row"><input aria-label="Firefox pairing code" readonly :value="pairingCode" /><button class="icon-button compact" type="button" title="Copy pairing code" aria-label="Copy pairing code" @click="copyPairingCode"><ClipboardDocumentIcon aria-hidden="true" /></button></div>
       <p class="capture-help">Paste this pairing code into the add on, then play media in its active tab. {{ expiresText }}</p>
+      <button class="capture-action" type="button" :disabled="loading" @click="start"><PlayIcon aria-hidden="true" />{{ loading ? 'Generating' : pairingExpired ? 'Generate fresh pairing code' : 'Refresh pairing code' }}</button>
       <ul v-if="capture.streams.length" class="stream-list"><li v-for="stream in capture.streams" :key="stream.id"><div class="stream-summary"><strong>{{ stream.name }}</strong><span>{{ stream.host }} · {{ stream.type }}</span></div><button class="icon-button compact" type="button" title="Download captured stream" :aria-label="`Download ${stream.name}`" @click="download(stream)"><ArrowDownTrayIcon aria-hidden="true" /></button></li>
       </ul>
       <div v-else class="empty-state capture-waiting"><p>Waiting for media</p><span>Only requests from the tab selected in the add on are captured.</span></div>

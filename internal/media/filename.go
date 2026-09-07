@@ -1,10 +1,12 @@
 package media
 
 import (
+	"fmt"
 	"net/url"
 	"path"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var unsafeFilenameCharacters = regexp.MustCompile(`[<>:"/\\|?*\x00-\x1f]`)
@@ -64,6 +66,21 @@ func OutputFilename(rawURL string, kind SourceKind) string {
 		return WithExtension(filename, extension)
 	}
 	return filename
+}
+
+// TimestampedOutputFilename returns a source based filename with the time the
+// download was queued. Milliseconds distinguish repeated captures of a source.
+func TimestampedOutputFilename(rawURL string, kind SourceKind, downloadedAt time.Time) string {
+	filename := FilenameFromURL(rawURL)
+	stem := strings.TrimSuffix(filename, path.Ext(filename))
+	if stem == "" {
+		stem = fallbackFilename
+	}
+	name := fmt.Sprintf("%s-download_%s_%03d", stem, downloadedAt.Format("20060102_150405"), downloadedAt.Nanosecond()/int(time.Millisecond))
+	if extension := DefaultExtension(kind); extension != "" {
+		return WithExtension(name, extension)
+	}
+	return WithExtension(name, path.Ext(filename))
 }
 
 // HostFromURL returns the hostname in rawURL, or an empty string when it is not

@@ -63,7 +63,7 @@ The desktop app can capture authorized media requests from Firefox or Zen withou
 5. Open the browser add on, paste that code into **Code from OpenDownload desktop app**, then select **Start capture** while the streaming tab is active.
 6. Play the media, then select a detected stream in OpenDownload to download it with the captured request context.
 
-The pairing code combines a system selected loopback port with a fresh 256 bit cryptographic token. It is accepted only from `127.0.0.1` and expires for initial pairing after five minutes. The token is never written to disk or displayed in captured stream metadata. Cookie and authorization values remain in memory for the active desktop session, are not displayed or logged, and are cleared when capture stops or the app exits.
+The pairing code combines a system selected loopback port with a fresh 256 bit cryptographic token. It is accepted only from `127.0.0.1` and expires for initial pairing after five minutes. Use **Refresh pairing code** in the desktop app to replace an expired code without relaunching OpenDownload. Refreshing invalidates the previous code. The token is never written to disk or displayed in captured stream metadata. Cookie and authorization values remain in memory for the active desktop session, are not displayed or logged, and are cleared when capture stops or the app exits.
 
 This protects against network access and token guessing. It does not protect against another local process that obtains the active pairing code, so stop capture when you are finished. The add on requests broad host access because streams can come from a separate CDN domain, but it records only the active tab you explicitly selected.
 

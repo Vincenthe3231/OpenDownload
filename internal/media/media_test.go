@@ -1,6 +1,9 @@
 package media
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestClassifyURL(t *testing.T) {
 	tests := []struct {
@@ -46,6 +49,27 @@ func TestOutputFilename(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			if actual := OutputFilename(test.rawURL, test.kind); actual != test.expected {
 				t.Fatalf("OutputFilename(%q, %q) = %q, want %q", test.rawURL, test.kind, actual, test.expected)
+			}
+		})
+	}
+}
+
+func TestTimestampedOutputFilename(t *testing.T) {
+	downloadedAt := time.Date(2026, time.September, 6, 3, 23, 1, 123000000, time.Local)
+	tests := []struct {
+		name     string
+		rawURL   string
+		kind     SourceKind
+		expected string
+	}{
+		{name: "direct", rawURL: "https://example.test/movie.mp4", kind: SourceDirect, expected: "movie-download_20260906_032301_123.mp4"},
+		{name: "HLS", rawURL: "https://example.test/video.m3u8", kind: SourceHLS, expected: "video-download_20260906_032301_123.ts"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if actual := TimestampedOutputFilename(test.rawURL, test.kind, downloadedAt); actual != test.expected {
+				t.Fatalf("TimestampedOutputFilename() = %q, want %q", actual, test.expected)
 			}
 		})
 	}

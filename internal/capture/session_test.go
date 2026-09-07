@@ -98,3 +98,23 @@ func TestStartUsesLoopbackPairingAddress(t *testing.T) {
 		t.Fatal("pairing code is already expired")
 	}
 }
+
+func TestStartReplacesExpiredOrUnpairedSession(t *testing.T) {
+	manager := NewManager()
+	first, err := manager.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Stop()
+
+	second, err := manager.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Code == second.Code {
+		t.Fatal("replacement pairing code must be fresh")
+	}
+	if second.ExpiresAt.Before(time.Now()) {
+		t.Fatal("replacement pairing code is already expired")
+	}
+}

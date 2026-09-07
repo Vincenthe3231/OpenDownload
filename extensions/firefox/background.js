@@ -1,6 +1,5 @@
-importScripts('constants.js');
-
 let capture = null;
+let lastError = '';
 const pending = new Map();
 
 function normalizePairingCode(value) {
@@ -64,7 +63,13 @@ async function sendCapture(request, type) {
     body: JSON.stringify({ url: request.url, type, headers: request.headers }),
   });
   if (!response.ok && capture === session) {
-    session.error = response.status === 401 ? 'Pairing expired. Start capture again in OpenDownload.' : 'OpenDownload did not accept the stream.';
+    if (response.status === 401) {
+      capture = null;
+      pending.clear();
+      lastError = 'Pairing expired or was replaced. Paste the fresh code from OpenDownload and select Start capture.';
+      return;
+    }
+    session.error = 'OpenDownload did not accept the stream.';
   }
 }
 
@@ -104,23 +109,30 @@ browser.webRequest.onErrorOccurred.addListener(
   { urls: ['<all_urls>'] },
 );
 
-browser.runtime.onMessage.addListener(async (message) => {
+function handleMessage(message) {
   if (message.type === 'start') {
     const pairing = normalizePairingCode(message.code);
-    const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-    if (!tab || tab.id === undefined || !/^https?:/.test(tab.url || '')) throw new Error('Open a website in the active tab before starting capture.');
-    pending.clear();
-    capture = { ...pairing, tabId: tab.id, error: '' };
-    return status();
+    return browser.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+      if (!tab || tab.id === undefined || !/^https?:/.test(tab.url || '')) {
+        throw new Error('Open a website in the active tab before starting capture.');
+      }
+      pending.clear();
+      lastError = '';
+      capture = { ...pairing, tabId: tab.id, error: '' };
+      return status();
+    });
   }
   if (message.type === 'stop') {
     capture = null;
     pending.clear();
+    lastError = '';
     return status();
   }
-  return status();
-});
+  return Promise.resolve(status());
+}
+
+browser.runtime.onMessage.addListener(handleMessage);
 
 function status() {
-  return capture ? { active: true, error: capture.error } : { active: false, error: '' };
+  return capture ? { active: true, error: capture.error } : { active: false, error: lastError };
 }

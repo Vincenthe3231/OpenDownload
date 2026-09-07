@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "OpenDownload Capture",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Captures media requests from one selected tab for OpenDownload.",
   "applications": {
     "gecko": {
@@ -16,7 +16,7 @@
     "http://127.0.0.1/*"
   ],
   "background": {
-    "scripts": ["background.js"],
+    "scripts": ["constants.js", "background.js"],
     "persistent": true
   },
   "browser_action": {
