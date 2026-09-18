@@ -1,0 +1,7 @@
+{
+  "name": "opendownload",
+  "private": true,
+  "scripts": {
+    "lint": "pnpm --dir client lint && golangci-lint run ./..."
+  }
+}

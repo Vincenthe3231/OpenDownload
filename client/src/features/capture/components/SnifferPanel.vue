@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ArrowDownTrayIcon, ClipboardDocumentIcon, PlayIcon } from '@heroicons/vue/24/outline';
-import { queueCapturedStream, startFirefoxCapture } from '../api';
+import { queueCapturedStream, startBrowserCapture } from '../api';
 import { subscribeToCaptureEvents, type CaptureEventSubscription } from '../events';
 import { useCaptureStore } from '../store';
 import { useDownloadStore } from '../../downloads/store';
@@ -44,13 +44,13 @@ async function start(): Promise<void> {
   error.value = '';
   loading.value = true;
   try {
-    const pairing = await startFirefoxCapture();
+    const pairing = await startBrowserCapture();
     pairingCode.value = pairing.code;
     pairingExpiresAt.value = pairing.expiresAt;
     capture.setSession({ active: true, paired: false, expiresAt: pairing.expiresAt });
     await eventSubscription?.hydrate();
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : 'Could not start Firefox capture.';
+    error.value = reason instanceof Error ? reason.message : 'Could not start browser capture.';
   } finally {
     loading.value = false;
   }
@@ -94,11 +94,11 @@ onBeforeUnmount(() => {
   <div class="panel-content">
     <div class="panel-heading"><div><p class="eyebrow">CAPTURE</p><h2>Detected streams</h2></div><span class="count-badge">{{ capture.streams.length }}</span>
     </div>
-    <div v-if="!isCaptureActive" class="empty-state capture-empty"><p>Capture from Firefox or Zen</p><span>Generate a pairing code, then paste it into the temporary browser add on for the selected tab.</span><button class="capture-action" type="button" :disabled="loading" @click="start"><PlayIcon aria-hidden="true" />{{ loading ? 'Starting' : 'Generate pairing code' }}</button>
+    <div v-if="!isCaptureActive" class="empty-state capture-empty"><p>Capture from Chrome, Edge, Firefox, or Zen</p><span>Generate a pairing code, then paste it into the temporary browser extension for the selected tab.</span><button class="capture-action" type="button" :disabled="loading" @click="start"><PlayIcon aria-hidden="true" />{{ loading ? 'Starting' : 'Generate pairing code' }}</button>
     </div>
     <div v-else class="capture-active">
-      <div class="pairing-row"><input aria-label="Firefox pairing code" readonly :value="pairingCode" /><button class="icon-button compact" type="button" title="Copy pairing code" aria-label="Copy pairing code" @click="copyPairingCode"><ClipboardDocumentIcon aria-hidden="true" /></button></div>
-      <p class="capture-help">Paste this pairing code into the add on, then play media in its active tab. {{ expiresText }}</p>
+      <div class="pairing-row"><input aria-label="Browser pairing code" readonly :value="pairingCode" /><button class="icon-button compact" type="button" title="Copy pairing code" aria-label="Copy pairing code" @click="copyPairingCode"><ClipboardDocumentIcon aria-hidden="true" /></button></div>
+      <p class="capture-help">Paste this pairing code into the browser extension, then play media in its active tab. {{ expiresText }}</p>
       <button class="capture-action" type="button" :disabled="loading" @click="start"><PlayIcon aria-hidden="true" />{{ loading ? 'Generating' : pairingExpired ? 'Generate fresh pairing code' : 'Refresh pairing code' }}</button>
       <ul v-if="capture.streams.length" class="stream-list"><li v-for="stream in capture.streams" :key="stream.id"><div class="stream-summary"><strong>{{ stream.name }}</strong><span>{{ stream.host }} · {{ stream.type }}</span></div><button class="icon-button compact" type="button" title="Download captured stream" :aria-label="`Download ${stream.name}`" @click="download(stream)"><ArrowDownTrayIcon aria-hidden="true" /></button></li>
       </ul>

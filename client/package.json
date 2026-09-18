@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit --project tsconfig.json",
     "test": "tsc --noEmit --project tsconfig.json && vite build"
   },
@@ -22,9 +23,15 @@
   },
   "type": "module",
   "devDependencies": {
+    "@babel/eslint-parser": "^8.0.5",
+    "@babel/plugin-syntax-typescript": "^8.0.3",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^26.4.1",
     "@vitejs/plugin-vue": "^6.0.8",
     "autoprefixer": "^10.5.4",
+    "eslint": "^10.10.0",
+    "eslint-plugin-vue": "^10.11.0",
+    "globals": "^17.12.0",
     "postcss": "^8.5.28",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",

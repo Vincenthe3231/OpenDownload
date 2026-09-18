@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OpenDownload Capture</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <h1>OpenDownload <small>0.1.1</small></h1>
+      <p id="state">In the OpenDownload desktop app, select Generate pairing code in Detected streams. Copy the code shown there, then paste it below.</p>
+      <label for="pairing">Code from OpenDownload desktop app</label>
+      <textarea id="pairing" rows="3" spellcheck="false" placeholder="Generated after selecting Start capture"></textarea>
+      <button id="start" type="button">Start capture</button>
+      <button id="stop" type="button" hidden>Stop capture</button>
+      <p id="error" role="alert"></p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

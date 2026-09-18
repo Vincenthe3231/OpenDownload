@@ -45,7 +45,7 @@ function bridge(): CaptureBridge {
   return getAppBridge<CaptureBridge>();
 }
 
-export async function startFirefoxCapture(): Promise<Pairing> {
+export async function startBrowserCapture(): Promise<Pairing> {
   const pairing = parsePairing(await bridge().StartFirefoxCapture());
   if (!pairing) {
     throw new Error('OpenDownload returned an invalid capture session.');

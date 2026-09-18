@@ -1,6 +1,6 @@
 # OpenDownload Firefox Capture
 
-This temporary Firefox WebExtension captures media requests from the tab you explicitly select and sends them to a paired OpenDownload desktop app. It does not intercept TLS or change certificate trust.
+This temporary Firefox WebExtension captures media requests from the tab you explicitly select and sends them to a paired OpenDownload desktop app. It does not intercept TLS or change certificate trust. Chrome and Edge use the separate unpacked package in `extensions/chromium`.
 
 ## Load temporarily
 

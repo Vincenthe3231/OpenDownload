@@ -85,12 +85,12 @@ func (app *App) ListDownloadJobs() []download.JobSnapshot {
 	return app.downloads.List()
 }
 
-// StartFirefoxCapture starts a fresh paired Firefox or Zen capture session.
+// StartFirefoxCapture starts a fresh paired browser capture session.
 func (app *App) StartFirefoxCapture() (capture.Pairing, error) {
 	return app.capture.Start()
 }
 
-// StopFirefoxCapture clears the active paired capture session.
+// StopFirefoxCapture clears the active paired browser capture session.
 func (app *App) StopFirefoxCapture() {
 	app.capture.Stop()
 }

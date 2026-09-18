@@ -27,3 +27,5 @@ download/
 .state
 
 **/node_modules/
+
+.codegraph

@@ -63,7 +63,7 @@ func (m *Manager) Start() (Pairing, error) {
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return Pairing{}, fmt.Errorf("start Firefox capture receiver: %w", err)
+		return Pairing{}, fmt.Errorf("start browser capture receiver: %w", err)
 	}
 	token, err := randomToken()
 	if err != nil {

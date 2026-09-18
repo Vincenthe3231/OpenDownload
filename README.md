@@ -52,20 +52,32 @@ Inspect a URL before downloading:
 .\build\bin\opendownload-cli.exe info "https://example.com/playlist.m3u8"
 ```
 
-## Firefox and Zen capture
+## Browser capture
 
-The desktop app can capture authorized media requests from Firefox or Zen without installing a local root certificate or intercepting TLS. It captures only the tab you select in the browser add on.
+The desktop app can capture authorized media requests from Chrome, Edge, Firefox, or Zen without installing a local root certificate or intercepting TLS. It captures only the tab you select in the browser extension.
+
+### Firefox and Zen
 
 1. Open `about:debugging#/runtime/this-firefox` in Firefox Developer Edition or Zen.
 2. Select **Load Temporary Add-on** and choose `extensions/firefox/manifest.json`.
 3. In the OpenDownload desktop app, find the **Detected streams** card and select **Start capture**.
 4. OpenDownload displays a long pairing code in that card. Select the copy icon beside it.
-5. Open the browser add on, paste that code into **Code from OpenDownload desktop app**, then select **Start capture** while the streaming tab is active.
+5. Open the browser extension, paste that code into **Code from OpenDownload desktop app**, then select **Start capture** while the streaming tab is active.
 6. Play the media, then select a detected stream in OpenDownload to download it with the captured request context.
+
+### Chrome and Edge
+
+1. Open `chrome://extensions` in Chrome or `edge://extensions` in Edge.
+2. Enable **Developer mode**, select **Load unpacked**, and choose `extensions/chromium`.
+3. In OpenDownload, find the **Detected streams** card and select **Generate pairing code**.
+4. Copy the pairing code, open the OpenDownload Capture extension, paste the code, and select **Start capture** while the streaming tab is active.
+5. Play the media, then select a detected stream in OpenDownload to download it with the captured request context.
+
+The Chrome and Edge package is an unpacked MV3 extension for Chromium 102 or later. It requests broad HTTP and HTTPS site access because media can come from a separate CDN domain. Chrome and Edge are supported, and other Chromium browsers are best effort. See [extensions/chromium/README.md](extensions/chromium/README.md) for browser-specific behavior and final-header notes.
 
 The pairing code combines a system selected loopback port with a fresh 256 bit cryptographic token. It is accepted only from `127.0.0.1` and expires for initial pairing after five minutes. Use **Refresh pairing code** in the desktop app to replace an expired code without relaunching OpenDownload. Refreshing invalidates the previous code. The token is never written to disk or displayed in captured stream metadata. Cookie and authorization values remain in memory for the active desktop session, are not displayed or logged, and are cleared when capture stops or the app exits.
 
-This protects against network access and token guessing. It does not protect against another local process that obtains the active pairing code, so stop capture when you are finished. The add on requests broad host access because streams can come from a separate CDN domain, but it records only the active tab you explicitly selected.
+This protects against network access and token guessing. It does not protect against another local process that obtains the active pairing code, so stop capture when you are finished. The browser extensions request broad host access because streams can come from a separate CDN domain, but they record only the active tab you explicitly selected.
 
 ## Proxy capture
 
@@ -77,7 +89,7 @@ The CLI proxy is an optional fallback for advanced use cases. Prefer the Firefox
 
 Set your browser proxy to `127.0.0.1:9000`, load the page, and play the media. The proxy binds only to loopback, forwards ordinary HTTP traffic, and tunnels HTTPS without decrypting it. It cannot inspect encrypted media requests.
 
-Use the Firefox and Zen add on path for encrypted stream capture because it preserves ordinary browser certificate verification and supplies the request context directly to the desktop app.
+Use the browser extension path for encrypted stream capture because it preserves ordinary browser certificate verification and supplies the request context directly to the desktop app.
 
 ## Requirements and development
 
@@ -88,11 +100,16 @@ Use the Firefox and Zen add on path for encrypted stream capture because it pres
 Run validation in this order because Go embeds the generated client bundle:
 
 ```powershell
+pnpm lint
+```
+
+The combined lint command runs ESLint for the Vue and TypeScript client, followed by `golangci-lint run ./...` for the Go application and server packages. Install `golangci-lint` and make sure it is available on `PATH` before running it.
+
+```powershell
 pnpm --dir client typecheck
 pnpm --dir client test
 pnpm --dir client build
 go test ./...
-go vet ./...
 go test -race ./...
 wails build
 ```
@@ -108,7 +125,7 @@ Project layout:
 ## Current limitations
 
 - DASH downloads select the best video representation. Audio track merging is not implemented.
-- The Firefox and Zen add on is loaded temporarily for this initial release. Mozilla signing and public distribution are not included.
+- The Firefox and Zen extension is loaded temporarily, and the Chrome and Edge extension is loaded unpacked for this initial release. Store signing and public distribution are not included.
 - Browser cookie import and custom headers are CLI only for manual URL downloads.
 
 ## License
