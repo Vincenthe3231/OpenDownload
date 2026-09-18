@@ -7,7 +7,12 @@ param(
 $ErrorActionPreference = 'Stop'
 
 if ($Target -eq 'Desktop') {
-    & wails build
+    & go build -o build\bin\opendownload-native-host.exe ./cmd/opendownload-native-host
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+
+    & wails build -nsis -installscope user
     exit $LASTEXITCODE
 }
 

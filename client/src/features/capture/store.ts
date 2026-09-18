@@ -9,7 +9,11 @@ interface CaptureState {
 
 export const useCaptureStore = defineStore('capture', {
   state: (): CaptureState => ({
-    session: { ...EMPTY_CAPTURE_SESSION },
+    session: {
+      ...EMPTY_CAPTURE_SESSION,
+      mode: 'manual',
+      nativeStatus: 'disconnected',
+    },
     streams: [],
   }),
   actions: {

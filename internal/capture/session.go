@@ -16,27 +16,35 @@ import (
 
 // Manager owns one local browser capture session and its in memory request data.
 type Manager struct {
-	mu           sync.Mutex
-	server       *http.Server
-	listener     net.Listener
-	token        string
-	expires      time.Time
-	paired       bool
-	streams      map[string]storedStream
-	streamOrder  []string
-	seen         map[string]struct{}
-	now          func() time.Time
-	listeners    map[uint64]Listener
-	nextListener uint64
+	mu            sync.Mutex
+	server        *http.Server
+	listener      net.Listener
+	token         string
+	expires       time.Time
+	paired        bool
+	streams       map[string]storedStream
+	streamOrder   []string
+	seen          map[string]struct{}
+	mode          Mode
+	nativeStatus  NativeConnectionStatus
+	browser       string
+	tabID         int64
+	autoSessionID string
+	autoSecret    string
+	now           func() time.Time
+	listeners     map[uint64]Listener
+	nextListener  uint64
 }
 
 // NewManager returns an idle capture manager.
 func NewManager() *Manager {
 	return &Manager{
-		streams:   make(map[string]storedStream),
-		seen:      make(map[string]struct{}),
-		now:       time.Now,
-		listeners: make(map[uint64]Listener),
+		streams:      make(map[string]storedStream),
+		seen:         make(map[string]struct{}),
+		now:          time.Now,
+		listeners:    make(map[uint64]Listener),
+		mode:         ModeManual,
+		nativeStatus: NativeDisconnected,
 	}
 }
 
@@ -57,6 +65,13 @@ func (m *Manager) Subscribe(listener Listener) func() {
 	}
 }
 
+// Session returns the current safe capture state.
+func (m *Manager) Session() SessionSnapshot {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.sessionLocked()
+}
+
 // Start replaces any active capture session with a fresh loopback session.
 func (m *Manager) Start() (Pairing, error) {
 	m.Stop()
@@ -73,6 +88,12 @@ func (m *Manager) Start() (Pairing, error) {
 
 	m.mu.Lock()
 	m.listener = listener
+	m.mode = ModeManual
+	m.nativeStatus = NativeDisconnected
+	m.browser = ""
+	m.tabID = 0
+	m.autoSessionID = ""
+	m.autoSecret = ""
 	m.token = token
 	m.expires = m.now().Add(pairingLifetime)
 	m.paired = false
@@ -99,12 +120,18 @@ func (m *Manager) Start() (Pairing, error) {
 func (m *Manager) Stop() {
 	m.mu.Lock()
 	server := m.server
-	wasActive := server != nil || m.token != ""
+	wasActive := server != nil || m.token != "" || m.autoSessionID != ""
 	m.server = nil
 	m.listener = nil
 	m.token = ""
 	m.expires = time.Time{}
 	m.paired = false
+	m.mode = ModeManual
+	m.nativeStatus = NativeDisconnected
+	m.browser = ""
+	m.tabID = 0
+	m.autoSessionID = ""
+	m.autoSecret = ""
 	m.streams = make(map[string]storedStream)
 	m.streamOrder = nil
 	m.seen = make(map[string]struct{})
@@ -113,7 +140,7 @@ func (m *Manager) Stop() {
 		_ = server.Close()
 	}
 	if wasActive {
-		session := SessionSnapshot{}
+		session := SessionSnapshot{Mode: ModeManual, NativeStatus: NativeDisconnected}
 		m.emit(Event{Type: EventSessionChanged, Session: &session})
 	}
 }
@@ -223,9 +250,13 @@ func (m *Manager) evictOldestLocked() {
 
 func (m *Manager) sessionLocked() SessionSnapshot {
 	return SessionSnapshot{
-		Active:    m.token != "",
-		ExpiresAt: m.expires,
-		Paired:    m.paired,
+		Active:       m.token != "" || m.autoSessionID != "",
+		ExpiresAt:    m.expires,
+		Paired:       m.paired,
+		Mode:         m.mode,
+		NativeStatus: m.nativeStatus,
+		Browser:      m.browser,
+		TabID:        m.tabID,
 	}
 }
 

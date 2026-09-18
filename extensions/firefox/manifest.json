@@ -12,6 +12,7 @@
     "activeTab",
     "tabs",
     "webRequest",
+    "nativeMessaging",
     "<all_urls>",
     "http://127.0.0.1/*"
   ],

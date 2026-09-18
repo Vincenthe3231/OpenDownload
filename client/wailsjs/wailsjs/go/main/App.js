@@ -6,8 +6,24 @@ export function CancelDownload(arg1) {
   return window['go']['main']['App']['CancelDownload'](arg1);
 }
 
+export function DeveloperDiagnosticsEnabled() {
+  return window['go']['main']['App']['DeveloperDiagnosticsEnabled']();
+}
+
+export function ExportDiagnosticHistory() {
+  return window['go']['main']['App']['ExportDiagnosticHistory']();
+}
+
+export function GetCaptureSession() {
+  return window['go']['main']['App']['GetCaptureSession']();
+}
+
 export function ListCapturedStreams() {
   return window['go']['main']['App']['ListCapturedStreams']();
+}
+
+export function ListDiagnosticHistory() {
+  return window['go']['main']['App']['ListDiagnosticHistory']();
 }
 
 export function ListDownloadJobs() {
@@ -22,8 +38,20 @@ export function QueueDownload(arg1) {
   return window['go']['main']['App']['QueueDownload'](arg1);
 }
 
+export function SetCaptureDiagnostic(arg1) {
+  return window['go']['main']['App']['SetCaptureDiagnostic'](arg1);
+}
+
+export function SetDeveloperDiagnostics(arg1) {
+  return window['go']['main']['App']['SetDeveloperDiagnostics'](arg1);
+}
+
 export function StartFirefoxCapture() {
   return window['go']['main']['App']['StartFirefoxCapture']();
+}
+
+export function StopBrowserCapture() {
+  return window['go']['main']['App']['StopBrowserCapture']();
 }
 
 export function StopFirefoxCapture() {

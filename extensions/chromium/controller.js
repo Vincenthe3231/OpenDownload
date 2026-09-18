@@ -8,6 +8,7 @@ import {
 } from './capture.js';
 
 const pairingExpiredMessage = 'Pairing expired or was replaced. Paste the fresh code from OpenDownload and select Start capture.';
+const automaticCaptureMessage = 'Automatic capture is unavailable. Repair the OpenDownload native host or use manual pairing.';
 
 function errorMessage(reason, fallback) {
   return reason instanceof Error ? reason.message : fallback;
@@ -47,6 +48,7 @@ export function createCaptureController(api) {
         endpoint: capture.endpoint,
         token: capture.token,
         tabId: capture.tabId,
+        mode: capture.mode || 'manual',
         error: capture.error || '',
       },
     });
@@ -69,12 +71,11 @@ export function createCaptureController(api) {
   }
 
   function status() {
-    return capture ? { active: true, error: capture.error || '' } : { active: false, error: lastError };
+    return capture ? { active: true, mode: capture.mode || 'manual', error: capture.error || '' } : { active: false, mode: 'manual', error: lastError };
   }
 
-  async function start(code) {
+  async function start(code, manual = false) {
     await ready;
-    const pairing = normalizePairingCode(code);
     const tabs = await api.queryActiveTab();
     const tab = tabs && tabs[0];
     if (!tab || !Number.isInteger(tab.id) || !isHttpURL(tab.url || '')) {
@@ -83,6 +84,20 @@ export function createCaptureController(api) {
 
     pending.clear();
     lastError = '';
+	if (!manual && api.nativeConnect && api.nativeRequest) {
+		try {
+			const port = api.nativeConnect();
+			const response = await api.nativeRequest(port, { type: 'start', browser: api.browserFamily || 'chromium', tabId: tab.id });
+			if (!response || response.type !== 'started') throw new Error(response && response.error ? response.error : automaticCaptureMessage);
+			capture = { mode: 'automatic', tabId: tab.id, port, error: '' };
+			return status();
+		} catch (reason) {
+			lastError = reason instanceof Error ? reason.message : automaticCaptureMessage;
+		}
+	}
+
+	if (!code) throw new Error(lastError || automaticCaptureMessage);
+	const pairing = normalizePairingCode(code);
     capture = { ...pairing, tabId: tab.id, error: '' };
     await persist();
     return status();
@@ -142,12 +157,24 @@ export function createCaptureController(api) {
 
   async function handleMessage(message) {
     await ready;
-    if (message && message.type === 'start') return start(message.code);
+    if (message && message.type === 'start') return start(message.code, message.manual === true);
     if (message && message.type === 'stop') {
+		if (capture && capture.mode === 'automatic' && api.nativeRequest) {
+			try { await api.nativeRequest(capture.port, { type: 'stop' }); } catch { /* host already disconnected */ }
+			if (capture.port && typeof capture.port.disconnect === 'function') capture.port.disconnect();
+		}
       await clearSession();
       return status();
     }
     return status();
+  }
+
+  function handleNativeDisconnect(port) {
+    if (!capture || capture.mode !== 'automatic' || capture.port !== port) return;
+    capture = null;
+    pending.clear();
+    lastError = automaticCaptureMessage;
+    void api.storageRemove(STORAGE_KEY);
   }
 
   return {
@@ -156,6 +183,7 @@ export function createCaptureController(api) {
     onSendHeaders,
     onHeadersReceived,
     onErrorOccurred,
+    handleNativeDisconnect,
     status,
     getPendingSize: () => pending.size,
     getLastError: () => lastError,

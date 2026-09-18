@@ -1,17 +1,18 @@
 # OpenDownload Chrome and Edge Capture
 
-This is a static, unpacked Chromium WebExtension for Chrome and Edge 102 or later. It captures authorized media requests from the one tab you explicitly select and sends them to a paired OpenDownload desktop app. It uses MV3 `webRequest` observation only. It does not use debugger, cookies, tabs, or blocking permissions, and it does not intercept TLS.
+This is a static, unpacked Chromium WebExtension for Chrome and Edge 102 or later. It captures authorized media requests from the one tab you explicitly select and sends them to OpenDownload through native messaging. It uses MV3 `webRequest` observation only. It does not use debugger, cookies, tabs, or blocking permissions, and it does not intercept TLS.
 
 ## Load unpacked
 
-1. Open `chrome://extensions` in Chrome or `edge://extensions` in Edge.
-2. Enable **Developer mode**.
-3. Select **Load unpacked** and choose this `extensions/chromium` folder.
-4. In OpenDownload, find **Detected streams** and select **Generate pairing code**.
-5. Copy the pairing code, open this extension in the toolbar, paste the code, and select **Start capture** while the streaming tab is active.
-6. Play authorized media, then select a detected stream in OpenDownload to download it with the captured request context.
+1. Install OpenDownload with its Windows installer. This registers the native capture host for the current user.
+2. Open `chrome://extensions` in Chrome or `edge://extensions` in Edge.
+3. Enable **Developer mode**, select **Load unpacked**, and choose this `extensions/chromium` folder.
+4. Open OpenDownload, then open this extension on the streaming tab and select **Start automatic capture**.
+5. Play authorized media, then select a detected stream in OpenDownload to download it with the captured request context.
 
-The extension requests broad HTTP and HTTPS site access because media can come from a separate CDN domain. It still records only requests from the selected tab. Pairing metadata is held in `chrome.storage.session`; captured headers and request streams are kept only in memory and are never written to extension storage.
+If automatic capture cannot connect, the popup offers **Use manual pairing** as a recovery path. It is not required for a normal installation.
+
+The extension requests broad HTTP and HTTPS site access because media can come from a separate CDN domain. It still records only requests from the selected tab. Automatic capture keeps no credentials in extension storage. Manual-pairing metadata, captured headers, and request streams remain in memory only.
 
 Chrome and Edge are supported. Other Chromium browsers are best effort. The receiver keeps the compatibility route `/v1/firefox/streams` and the desktop methods `StartFirefoxCapture` and `StopFirefoxCapture` for existing Firefox and Zen clients.
 

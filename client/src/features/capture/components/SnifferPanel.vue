@@ -18,7 +18,8 @@ const loading = ref(false);
 let eventSubscription: CaptureEventSubscription | undefined;
 let expiryTimer: ReturnType<typeof setInterval> | undefined;
 
-const isCaptureActive = computed(() => capture.session.active && pairingCode.value !== '');
+const isCaptureActive = computed(() => capture.session.active);
+const isAutomatic = computed(() => capture.session.mode === 'automatic');
 const pairingExpired = computed(() => {
   const expiresAt = Date.parse(pairingExpiresAt.value);
   return !Number.isNaN(expiresAt) && currentTime.value >= expiresAt;
@@ -94,16 +95,18 @@ onBeforeUnmount(() => {
   <div class="panel-content">
     <div class="panel-heading"><div><p class="eyebrow">CAPTURE</p><h2>Detected streams</h2></div><span class="count-badge">{{ capture.streams.length }}</span>
     </div>
-    <div v-if="!isCaptureActive" class="empty-state capture-empty"><p>Capture from Chrome, Edge, Firefox, or Zen</p><span>Generate a pairing code, then paste it into the temporary browser extension for the selected tab.</span><button class="capture-action" type="button" :disabled="loading" @click="start"><PlayIcon aria-hidden="true" />{{ loading ? 'Starting' : 'Generate pairing code' }}</button>
-    </div>
-    <div v-else class="capture-active">
-      <div class="pairing-row"><input aria-label="Browser pairing code" readonly :value="pairingCode" /><button class="icon-button compact" type="button" title="Copy pairing code" aria-label="Copy pairing code" @click="copyPairingCode"><ClipboardDocumentIcon aria-hidden="true" /></button></div>
-      <p class="capture-help">Paste this pairing code into the browser extension, then play media in its active tab. {{ expiresText }}</p>
-      <button class="capture-action" type="button" :disabled="loading" @click="start"><PlayIcon aria-hidden="true" />{{ loading ? 'Generating' : pairingExpired ? 'Generate fresh pairing code' : 'Refresh pairing code' }}</button>
+	    <div v-if="!isCaptureActive" class="empty-state capture-empty"><p>Capture from Chrome, Edge, Firefox, or Zen</p><span>Start capture from the browser extension. Manual pairing remains available if automatic connection needs repair.</span><button class="capture-action" type="button" :disabled="loading" @click="start"><PlayIcon aria-hidden="true" />{{ loading ? 'Starting' : 'Use manual pairing' }}</button>
+	    </div>
+	    <div v-else class="capture-active">
+	      <div v-if="isAutomatic" class="capture-help">Automatic capture · {{ capture.session.nativeStatus }}<span v-if="capture.session.browser"> · {{ capture.session.browser }}</span><span v-if="capture.session.tabId"> · selected tab {{ capture.session.tabId }}</span></div>
+	      <div v-if="!isAutomatic" class="pairing-row"><input aria-label="Browser pairing code" readonly :value="pairingCode" /><button class="icon-button compact" type="button" title="Copy pairing code" aria-label="Copy pairing code" @click="copyPairingCode"><ClipboardDocumentIcon aria-hidden="true" /></button></div>
+	      <p v-if="!isAutomatic" class="capture-help">Paste this pairing code into the browser extension, then play media in its active tab. {{ expiresText }}</p>
+	      <button v-if="!isAutomatic" class="capture-action" type="button" :disabled="loading" @click="start"><PlayIcon aria-hidden="true" />{{ loading ? 'Generating' : pairingExpired ? 'Generate fresh pairing code' : 'Refresh pairing code' }}</button>
       <ul v-if="capture.streams.length" class="stream-list"><li v-for="stream in capture.streams" :key="stream.id"><div class="stream-summary"><strong>{{ stream.name }}</strong><span>{{ stream.host }} · {{ stream.type }}</span></div><button class="icon-button compact" type="button" title="Download captured stream" :aria-label="`Download ${stream.name}`" @click="download(stream)"><ArrowDownTrayIcon aria-hidden="true" /></button></li>
       </ul>
       <div v-else class="empty-state capture-waiting"><p>Waiting for media</p><span>Only requests from the tab selected in the add on are captured.</span></div>
     </div>
-    <p v-if="error" class="form-error" role="alert">{{ error }}</p>
+    <p v-if="capture.session.diagnostic" class="form-error" role="alert">{{ capture.session.diagnostic.userMessage }} <span v-if="capture.session.diagnostic.code">({{ capture.session.diagnostic.code }})</span></p>
+    <p v-else-if="error" class="form-error" role="alert">{{ error }}</p>
   </div>
 </template>

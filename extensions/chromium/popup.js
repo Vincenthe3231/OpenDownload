@@ -3,6 +3,11 @@ const start = document.querySelector('#start');
 const stop = document.querySelector('#stop');
 const state = document.querySelector('#state');
 const error = document.querySelector('#error');
+const manual = document.querySelector('#manual');
+const pairingLabel = document.querySelector('label[for="pairing"]');
+
+let manualMode = false;
+let lastStatus = { active: false, mode: 'manual', error: '' };
 
 function sendMessage(message) {
   return new Promise((resolve, reject) => {
@@ -18,14 +23,27 @@ function sendMessage(message) {
 }
 
 function render(status) {
-  pairing.hidden = false;
-  document.querySelector('label').hidden = false;
-  start.hidden = false;
+  lastStatus = status;
+  const automatic = status.active && status.mode === 'automatic';
+  const manualCapture = status.active && status.mode === 'manual';
+  const showPairing = manualMode && !status.active;
+
+  pairing.hidden = !showPairing;
+  pairingLabel.hidden = !showPairing;
+  manual.hidden = status.active || manualMode || !status.error;
+  start.hidden = status.active;
   stop.hidden = !status.active;
-  start.textContent = status.active ? 'Replace pairing code' : 'Start capture';
-  state.textContent = status.active
-    ? 'Paste the fresh pairing code from OpenDownload below, then select Replace pairing code.'
-    : 'Open OpenDownload, select Generate pairing code in Detected streams, then paste its generated code here.';
+  if (automatic) {
+    state.textContent = 'Capturing this tab through OpenDownload.';
+  } else if (manualCapture) {
+    state.textContent = 'Capturing this tab with manual pairing.';
+  } else if (manualMode) {
+    start.textContent = 'Start manual capture';
+    state.textContent = 'Generate a pairing code in OpenDownload, paste it here, then start capture.';
+  } else {
+    start.textContent = 'Start automatic capture';
+    state.textContent = 'Open OpenDownload, then start capture for this tab. Manual pairing is available if automatic connection needs repair.';
+  }
   error.textContent = status.error || '';
 }
 
@@ -46,10 +64,17 @@ function showConnectionError(reason) {
   error.textContent = message || 'Could not communicate with the OpenDownload extension.';
 }
 
+manual.addEventListener('click', () => {
+  manualMode = true;
+  pairing.value = '';
+  render(lastStatus);
+  pairing.focus();
+});
+
 start.addEventListener('click', async () => {
   error.textContent = '';
   try {
-    render(await sendMessage({ type: 'start', code: pairing.value }));
+    render(await sendMessage({ type: 'start', code: manualMode ? pairing.value : '', manual: manualMode }));
   } catch (reason) {
     showConnectionError(reason);
   }
@@ -58,6 +83,7 @@ start.addEventListener('click', async () => {
 stop.addEventListener('click', async () => {
   try {
     render(await sendMessage({ type: 'stop' }));
+    manualMode = false;
   } catch (reason) {
     showConnectionError(reason);
   }

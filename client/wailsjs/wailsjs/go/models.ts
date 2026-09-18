@@ -33,6 +33,51 @@ export namespace capture {
 		    return a;
 		}
 	}
+	export class SessionSnapshot {
+	    active: boolean;
+	    // Go type: time
+	    expiresAt?: any;
+	    paired: boolean;
+	    mode: string;
+	    nativeStatus: string;
+	    browser?: string;
+	    tabId?: number;
+	    diagnostic?: diagnostics.Diagnostic;
+	
+	    static createFrom(source: any = {}) {
+	        return new SessionSnapshot(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.active = source["active"];
+	        this.expiresAt = this.convertValues(source["expiresAt"], null);
+	        this.paired = source["paired"];
+	        this.mode = source["mode"];
+	        this.nativeStatus = source["nativeStatus"];
+	        this.browser = source["browser"];
+	        this.tabId = source["tabId"];
+	        this.diagnostic = this.convertValues(source["diagnostic"], diagnostics.Diagnostic);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class StreamSummary {
 	    id: string;
 	    host: string;
@@ -40,6 +85,8 @@ export namespace capture {
 	    type: string;
 	    // Go type: time
 	    capturedAt: any;
+	    errorCode?: string;
+	    diagnosticId?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new StreamSummary(source);
@@ -52,6 +99,58 @@ export namespace capture {
 	        this.name = source["name"];
 	        this.type = source["type"];
 	        this.capturedAt = this.convertValues(source["capturedAt"], null);
+	        this.errorCode = source["errorCode"];
+	        this.diagnosticId = source["diagnosticId"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
+export namespace diagnostics {
+	
+	export class Diagnostic {
+	    code: string;
+	    stage: string;
+	    retryable: boolean;
+	    userMessage: string;
+	    diagnosticId: string;
+	    // Go type: time
+	    occurredAt: any;
+	    technicalDetail?: string;
+	    safeContext?: Record<string, string>;
+	
+	    static createFrom(source: any = {}) {
+	        return new Diagnostic(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.code = source["code"];
+	        this.stage = source["stage"];
+	        this.retryable = source["retryable"];
+	        this.userMessage = source["userMessage"];
+	        this.diagnosticId = source["diagnosticId"];
+	        this.occurredAt = this.convertValues(source["occurredAt"], null);
+	        this.technicalDetail = source["technicalDetail"];
+	        this.safeContext = source["safeContext"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

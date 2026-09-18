@@ -7,6 +7,22 @@ export interface CaptureSessionSnapshot {
   active: boolean;
   paired: boolean;
   expiresAt: string;
+  mode: 'automatic' | 'manual';
+  nativeStatus: 'disconnected' | 'connecting' | 'connected';
+  browser?: string;
+  tabId?: number;
+  diagnostic?: CaptureDiagnostic;
+}
+
+export interface CaptureDiagnostic {
+  code: string;
+  stage: 'native_connection' | 'capture' | 'download' | string;
+  retryable: boolean;
+  userMessage: string;
+  diagnosticId: string;
+  occurredAt: string;
+  technicalDetail?: string;
+  safeContext?: Record<string, string>;
 }
 
 // These fields are intentionally safe to render. Source URLs and request
@@ -17,4 +33,6 @@ export interface CaptureStreamSummary {
   host: string;
   type: string;
   capturedAt: string;
+  errorCode?: string;
+  diagnosticId?: string;
 }

@@ -21,11 +21,16 @@ function parseCaptureSession(value: unknown): CaptureSessionSnapshot | null {
     return null;
   }
 
-  return {
-    active: raw.active,
-    paired: raw.paired,
-    expiresAt: typeof raw.expiresAt === 'string' ? raw.expiresAt : '',
-  };
+	return {
+		active: raw.active,
+		paired: raw.paired,
+		expiresAt: typeof raw.expiresAt === 'string' ? raw.expiresAt : '',
+		mode: raw.mode === 'automatic' ? 'automatic' : 'manual',
+		nativeStatus: raw.nativeStatus === 'connected' || raw.nativeStatus === 'connecting' ? raw.nativeStatus : 'disconnected',
+		browser: typeof raw.browser === 'string' ? raw.browser : undefined,
+		tabId: typeof raw.tabId === 'number' ? raw.tabId : undefined,
+		diagnostic: typeof raw.diagnostic === 'object' && raw.diagnostic !== null ? raw.diagnostic as CaptureSessionSnapshot['diagnostic'] : undefined,
+	};
 }
 
 export function subscribeToCaptureEvents(

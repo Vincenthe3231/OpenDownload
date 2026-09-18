@@ -1,6 +1,10 @@
 package capture
 
-import "time"
+import (
+	"time"
+
+	"github.com/opendownload/opendownload/internal/diagnostics"
+)
 
 // Stream contains request metadata and private request headers retained only in memory.
 type Stream struct {
@@ -14,11 +18,13 @@ type Stream struct {
 
 // StreamSummary is safe to send to the desktop client.
 type StreamSummary struct {
-	ID         string    `json:"id"`
-	Host       string    `json:"host"`
-	Name       string    `json:"name"`
-	Type       string    `json:"type"`
-	CapturedAt time.Time `json:"capturedAt"`
+	ID           string           `json:"id"`
+	Host         string           `json:"host"`
+	Name         string           `json:"name"`
+	Type         string           `json:"type"`
+	CapturedAt   time.Time        `json:"capturedAt"`
+	ErrorCode    diagnostics.Code `json:"errorCode,omitempty"`
+	DiagnosticID string           `json:"diagnosticId,omitempty"`
 }
 
 // Pairing contains the short lived pairing code returned directly to the desktop client.
@@ -29,10 +35,35 @@ type Pairing struct {
 
 // SessionSnapshot is safe to publish because it omits the pairing code.
 type SessionSnapshot struct {
-	Active    bool      `json:"active"`
-	ExpiresAt time.Time `json:"expiresAt,omitempty"`
-	Paired    bool      `json:"paired"`
+	Active       bool                    `json:"active"`
+	ExpiresAt    time.Time               `json:"expiresAt,omitempty"`
+	Paired       bool                    `json:"paired"`
+	Mode         Mode                    `json:"mode"`
+	NativeStatus NativeConnectionStatus  `json:"nativeStatus"`
+	Browser      string                  `json:"browser,omitempty"`
+	TabID        int64                   `json:"tabId,omitempty"`
+	Diagnostic   *diagnostics.Diagnostic `json:"diagnostic,omitempty"`
 }
+
+// Mode identifies how browser capture connects to the app.
+type Mode string
+
+const (
+	ModeManual    Mode = "manual"
+	ModeAutomatic Mode = "automatic"
+)
+
+// NativeConnectionStatus describes automatic capture transport state.
+type NativeConnectionStatus string
+
+const (
+	NativeDisconnected NativeConnectionStatus = "disconnected"
+	NativeConnecting   NativeConnectionStatus = "connecting"
+	NativeConnected    NativeConnectionStatus = "connected"
+)
+
+// CaptureDiagnostic aliases the shared transport-safe diagnostic contract.
+type CaptureDiagnostic = diagnostics.Diagnostic
 
 type receivedStream struct {
 	URL     string            `json:"url"`

@@ -30,7 +30,7 @@ test('manifest is a directly loadable MV3 package with observation-only permissi
   const manifest = JSON.parse(await readFile(new URL('../manifest.json', import.meta.url), 'utf8'));
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.minimum_chrome_version, '102');
-  assert.deepEqual(manifest.permissions.sort(), ['activeTab', 'storage', 'webRequest'].sort());
+  assert.deepEqual(manifest.permissions.sort(), ['activeTab', 'nativeMessaging', 'storage', 'webRequest'].sort());
   assert.deepEqual(manifest.host_permissions.sort(), ['http://*/*', 'https://*/*'].sort());
   assert.equal(manifest.background.type, 'module');
   assert.equal(manifest.background.service_worker, 'background.js');
@@ -107,7 +107,7 @@ test('service-worker restoration restores pairing metadata without storing heade
   const api = fakeApi({ restored: { endpoint: 'http://127.0.0.1:43123', token: 'token_value', tabId: 7, error: '' } });
   const controller = createCaptureController(api);
   await controller.initialize();
-  assert.deepEqual(controller.status(), { active: true, error: '' });
+  assert.deepEqual(controller.status(), { active: true, mode: 'manual', error: '' });
 
   await controller.onSendHeaders({ tabId: 7, requestId: 'restored', url: 'https://cdn.test/video.mp4', requestHeaders: [{ name: 'Cookie', value: 'secret' }] });
   assert.deepEqual(api.storage.captureSession, {
@@ -117,4 +117,23 @@ test('service-worker restoration restores pairing metadata without storing heade
     error: '',
   });
   assert.equal(JSON.stringify(api.storage).includes('secret'), false);
+});
+
+test('automatic capture starts without a pairing code and manual mode bypasses the host', async () => {
+  const api = fakeApi();
+  const nativeRequests = [];
+  api.nativeConnect = () => ({ disconnect() {} });
+  api.nativeRequest = async (_port, message) => {
+    nativeRequests.push(message);
+    return { type: message.type === 'start' ? 'started' : 'accepted' };
+  };
+  const controller = createCaptureController(api);
+  await controller.initialize();
+  await controller.handleMessage({ type: 'start' });
+  assert.deepEqual(controller.status(), { active: true, mode: 'automatic', error: '' });
+  await controller.handleMessage({ type: 'stop' });
+  assert.equal(nativeRequests.filter((message) => message.type === 'start').length, 1);
+  await controller.handleMessage({ type: 'start', manual: true, code: 'http://127.0.0.1:43123#token_value' });
+  assert.equal(controller.status().mode, 'manual');
+  assert.equal(nativeRequests.filter((message) => message.type === 'start').length, 1);
 });

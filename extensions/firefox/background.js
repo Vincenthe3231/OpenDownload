@@ -2,6 +2,25 @@ let capture = null;
 let lastError = '';
 const pending = new Map();
 
+function nativeRequest(port, message) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Native host response timed out.')), 5000);
+    const receive = (response) => {
+      clearTimeout(timer);
+      port.onMessage.removeListener(receive);
+      resolve(response);
+    };
+    port.onMessage.addListener(receive);
+    try {
+      port.postMessage(message);
+    } catch (reason) {
+      clearTimeout(timer);
+      port.onMessage.removeListener(receive);
+      reject(reason);
+    }
+  });
+}
+
 function normalizePairingCode(value) {
   const [endpoint, token] = value.trim().split('#');
   const parsed = new URL(endpoint);
@@ -54,6 +73,15 @@ function selectedHeaders(headers) {
 async function sendCapture(request, type) {
   const session = capture;
   if (!session) return;
+  if (session.mode === 'automatic') {
+    try {
+      const response = await nativeRequest(session.port, { type: 'stream', tabId: session.tabId, stream: { url: request.url, type, headers: request.headers } });
+      if (!response || response.type !== 'accepted' || capture !== session) session.error = 'OpenDownload did not accept the stream.';
+    } catch {
+      if (capture === session) session.error = 'Could not send the stream to OpenDownload.';
+    }
+    return;
+  }
   const response = await fetch(`${session.endpoint}/v1/firefox/streams`, {
     method: 'POST',
     headers: {
@@ -111,18 +139,55 @@ browser.webRequest.onErrorOccurred.addListener(
 
 function handleMessage(message) {
   if (message.type === 'start') {
-    const pairing = normalizePairingCode(message.code);
     return browser.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
       if (!tab || tab.id === undefined || !/^https?:/.test(tab.url || '')) {
         throw new Error('Open a website in the active tab before starting capture.');
       }
       pending.clear();
       lastError = '';
-      capture = { ...pairing, tabId: tab.id, error: '' };
-      return status();
+	  if (message.manual === true) {
+		const pairing = normalizePairingCode(message.code);
+		capture = { ...pairing, tabId: tab.id, error: '' };
+		return Promise.resolve(status());
+	  }
+
+	  try {
+		const port = browser.runtime.connectNative('com.opendownload.capture');
+		port.onDisconnect.addListener(() => {
+			if (capture && capture.mode === 'automatic' && capture.port === port) {
+				capture = null;
+				pending.clear();
+				lastError = 'Automatic capture host disconnected. Repair the native host or use manual pairing.';
+			}
+		});
+		return nativeRequest(port, { type: 'start', browser: 'firefox', tabId: tab.id }).then((response) => {
+			if (!response || response.type !== 'started') throw new Error(response && response.error ? response.error : 'Automatic capture is unavailable.');
+			capture = { mode: 'automatic', tabId: tab.id, port, error: '' };
+			return status();
+		}).catch((reason) => {
+			if (!message.code) throw reason;
+			const pairing = normalizePairingCode(message.code);
+			capture = { ...pairing, tabId: tab.id, error: '' };
+			return status();
+		});
+	  } catch (reason) {
+		if (!message.code) throw reason;
+		const pairing = normalizePairingCode(message.code);
+		capture = { ...pairing, tabId: tab.id, error: '' };
+		return Promise.resolve(status());
+	  }
     });
   }
   if (message.type === 'stop') {
+    if (capture && capture.mode === 'automatic') {
+      return nativeRequest(capture.port, { type: 'stop' }).catch(() => {}).then(() => {
+        if (capture.port && typeof capture.port.disconnect === 'function') capture.port.disconnect();
+        capture = null;
+        pending.clear();
+        lastError = '';
+        return status();
+      });
+    }
     capture = null;
     pending.clear();
     lastError = '';
@@ -134,5 +199,5 @@ function handleMessage(message) {
 browser.runtime.onMessage.addListener(handleMessage);
 
 function status() {
-  return capture ? { active: true, error: capture.error } : { active: false, error: lastError };
+  return capture ? { active: true, mode: capture.mode || 'manual', error: capture.error } : { active: false, mode: 'manual', error: lastError };
 }

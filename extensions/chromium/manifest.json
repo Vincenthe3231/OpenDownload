@@ -7,12 +7,10 @@
   "permissions": [
     "activeTab",
     "storage",
-    "webRequest"
+    "webRequest",
+    "nativeMessaging"
   ],
-  "host_permissions": [
-    "http://*/*",
-    "https://*/*"
-  ],
+  "host_permissions": ["http://*/*", "https://*/*"],
   "background": {
     "service_worker": "background.js",
     "type": "module"
@@ -20,5 +18,6 @@
   "action": {
     "default_title": "OpenDownload Capture",
     "default_popup": "popup.html"
-  }
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqDccJ3GX1zWJBi8AMjFw8gXeZvJGfigmqQMy+SABBKlASGC2xoCmd5c8wiM+3XlE0FMyMkiWc3SHGVuAO2PtH7ggm8vFcBEoLYlrrC12LoAChRPYssqWh5Ss8yiZJfh05JcUVRAw3f3BZuAwz9BdiEh1W7XKcROVxV1caddRYpke0qizbFT6ZvtBZXH4Bom00dwdPM4G0a7HwONT/5ZZNbKwBwADxY7pVTaBcTE0HB9tgRsokWsmIumWx0re8p0yHAY1B5efWYpUp261FAuS9aO4ek6DYnTkzuS+BzzOrq7VpjUUbbADsaeZ4Jqq/sLwimAD0aqHLqBPkkfEETUmtwIDAQAB"
 }
