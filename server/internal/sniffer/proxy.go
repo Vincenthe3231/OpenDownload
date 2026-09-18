@@ -46,7 +46,7 @@ func (p *Proxy) Start(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
-		p.server.Close()
+		_ = p.server.Close()
 	}()
 
 	err = p.server.Serve(ln)
@@ -93,7 +93,7 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	contentType := resp.Header.Get("Content-Type")
 	contentLength, _ := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64)
@@ -101,7 +101,7 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 
 	copyHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	_, _ = io.Copy(w, resp.Body)
 }
 
 func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
@@ -114,18 +114,18 @@ func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "Hijacking not supported", http.StatusInternalServerError)
-		destConn.Close()
+		_ = destConn.Close()
 		return
 	}
 
 	clientConn, _, err := hijacker.Hijack()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		destConn.Close()
+		_ = destConn.Close()
 		return
 	}
 
-	clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
+	_, _ = clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 
 	if p.config.CACert != "" && p.config.CAKey != "" {
 		p.handleMITM(clientConn, destConn, r.Host)
@@ -137,8 +137,8 @@ func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Proxy) handleMITM(clientConn, destConn net.Conn, host string) {
-	defer clientConn.Close()
-	defer destConn.Close()
+	defer func() { _ = clientConn.Close() }()
+	defer func() { _ = destConn.Close() }()
 
 	cert, err := tls.LoadX509KeyPair(p.config.CACert, p.config.CAKey)
 	if err != nil {
@@ -167,7 +167,7 @@ func (p *Proxy) handleMITM(clientConn, destConn net.Conn, host string) {
 		}
 		return
 	}
-	defer tlsClientConn.Close()
+	defer func() { _ = tlsClientConn.Close() }()
 
 	tlsDestConfig := &tls.Config{
 		ServerName: hostname,
@@ -179,16 +179,16 @@ func (p *Proxy) handleMITM(clientConn, destConn net.Conn, host string) {
 		}
 		return
 	}
-	defer tlsDestConn.Close()
+	defer func() { _ = tlsDestConn.Close() }()
 
 	go transfer(tlsDestConn, tlsClientConn)
 	transfer(tlsClientConn, tlsDestConn)
 }
 
 func transfer(dest io.WriteCloser, src io.ReadCloser) {
-	defer dest.Close()
-	defer src.Close()
-	io.Copy(dest, src)
+	defer func() { _ = dest.Close() }()
+	defer func() { _ = src.Close() }()
+	_, _ = io.Copy(dest, src)
 }
 
 func copyHeaders(dst, src http.Header) {

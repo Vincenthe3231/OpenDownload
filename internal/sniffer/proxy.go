@@ -96,7 +96,7 @@ func (p *Proxy) handleHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	contentLength, _ := strconv.ParseInt(response.Header.Get("Content-Length"), 10, 64)
 	p.config.Detector.Inspect(targetURL, response.Header.Get("Content-Type"), contentLength)
@@ -135,8 +135,8 @@ func (p *Proxy) handleConnect(w http.ResponseWriter, r *http.Request) {
 }
 
 func transfer(destination io.WriteCloser, source io.ReadCloser) {
-	defer destination.Close()
-	defer source.Close()
+	defer func() { _ = destination.Close() }()
+	defer func() { _ = source.Close() }()
 	_, _ = io.Copy(destination, source)
 }
 

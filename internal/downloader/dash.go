@@ -79,7 +79,7 @@ func (d *DASHDownloader) downloadSegmentRange(ctx context.Context, seg parser.DA
 	if err != nil {
 		return nil, transportError("fetch DASH byte range", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return readValidatedRangeResponse(resp, start, end)
 }
 
@@ -95,7 +95,6 @@ func parseDASHByteRange(value string) (int64, int64, error) {
 	}
 	return start, end, nil
 }
-
 
 func readValidatedRangeResponse(resp *http.Response, start, end int64) ([]byte, error) {
 	if resp == nil || resp.Body == nil {

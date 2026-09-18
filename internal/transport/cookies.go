@@ -31,17 +31,17 @@ func LoadCookiesFromBrowser(browser, domain string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("open browser cookie database: %w", err)
 	}
-	defer source.Close()
+	defer func() { _ = source.Close() }()
 
 	temporary, err := os.CreateTemp("", "opendownload-cookies-*.sqlite")
 	if err != nil {
 		return "", fmt.Errorf("create temporary cookie database: %w", err)
 	}
 	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
+	defer func() { _ = os.Remove(temporaryPath) }()
 
 	if _, err := io.Copy(temporary, source); err != nil {
-		temporary.Close()
+		_ = temporary.Close()
 		return "", fmt.Errorf("copy browser cookie database: %w", err)
 	}
 	if err := temporary.Close(); err != nil {
@@ -52,13 +52,13 @@ func LoadCookiesFromBrowser(browser, domain string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("open temporary cookie database: %w", err)
 	}
-	defer database.Close()
+	defer func() { _ = database.Close() }()
 
 	rows, err := database.Query("SELECT name, value FROM cookies WHERE host_key LIKE ?", "%"+domain+"%")
 	if err != nil {
 		return "", fmt.Errorf("query browser cookies: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	cookies := make([]string, 0)
 	for rows.Next() {
@@ -96,7 +96,7 @@ func loadNetscapeCookieJar(path string) (http.CookieJar, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open cookie file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	jar, err := cookiejar.New(nil)
 	if err != nil {

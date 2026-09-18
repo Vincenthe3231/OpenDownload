@@ -47,13 +47,13 @@ func (d *HTTPDownloader) downloadSingle(ctx context.Context, url, outPath string
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	file, err := os.Create(outPath)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	progress := &progressWriter{total: totalSize, start: time.Now()}
 	_, err = io.Copy(file, io.TeeReader(resp.Body, progress))
@@ -74,10 +74,10 @@ func (d *HTTPDownloader) downloadMultiSegment(ctx context.Context, url, outPath 
 	}
 
 	if err := file.Truncate(totalSize); err != nil {
-		file.Close()
+		_ = file.Close()
 		return fmt.Errorf("failed to allocate file: %w", err)
 	}
-	file.Close()
+	_ = file.Close()
 
 	var downloaded atomic.Int64
 	progress := &progressWriter{total: totalSize, start: time.Now()}
@@ -135,13 +135,13 @@ func (d *HTTPDownloader) downloadSegment(ctx context.Context, url, outPath strin
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	file, err := os.OpenFile(outPath, os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	if _, err := file.Seek(start, io.SeekStart); err != nil {
 		return err
@@ -174,9 +174,9 @@ func (d *HTTPDownloader) downloadSegment(ctx context.Context, url, outPath strin
 }
 
 type progressWriter struct {
-	total    int64
-	written  atomic.Int64
-	start    time.Time
+	total   int64
+	written atomic.Int64
+	start   time.Time
 }
 
 func (p *progressWriter) Write(data []byte) (int, error) {

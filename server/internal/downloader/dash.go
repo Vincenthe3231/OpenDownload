@@ -87,7 +87,7 @@ func (d *DASHDownloader) Download(ctx context.Context, rep *parser.DASHRepresent
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	for i, data := range results {
 		if data == nil {
@@ -119,7 +119,7 @@ func (d *DASHDownloader) downloadSegmentRange(ctx context.Context, seg parser.DA
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	data := make([]byte, 0, end-start+1)
 	buf := make([]byte, 32*1024)

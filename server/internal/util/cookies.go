@@ -36,7 +36,7 @@ func LoadCookiesFromBrowser(browser string, domain string) (string, error) {
 	if _, err := os.Stat(path); err != nil {
 		return "", err
 	}
-	
+
 	bytes, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
@@ -45,13 +45,13 @@ func LoadCookiesFromBrowser(browser string, domain string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	db, err := sql.Open("sqlite3", tmpFile)
 	if err != nil {
 		return "", err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Query cookies (simplified - depends on platform specific encryption handling!)
 	// NOTE: Real decryption requires OS-specific APIs (DPAPI on Windows, Keychain on macOS)
@@ -61,12 +61,14 @@ func LoadCookiesFromBrowser(browser string, domain string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var cookieStr string
 	for rows.Next() {
 		var name, value string
-		rows.Scan(&name, &value)
+		if err := rows.Scan(&name, &value); err != nil {
+			return "", err
+		}
 		cookieStr += fmt.Sprintf("%s=%s; ", name, value)
 	}
 

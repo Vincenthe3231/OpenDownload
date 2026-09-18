@@ -90,7 +90,7 @@ func (f *FFmpeg) ConcatFiles(ctx context.Context, inputs []string, output string
 	if err := os.WriteFile(listFile, []byte(strings.Join(lines, "\n")), 0644); err != nil {
 		return fmt.Errorf("failed to create concat list: %w", err)
 	}
-	defer os.Remove(listFile)
+	defer func() { _ = os.Remove(listFile) }()
 
 	args := []string{
 		"-y",

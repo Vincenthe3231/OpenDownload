@@ -51,10 +51,18 @@ func initConfig() error {
 	}
 
 	// Bind flags
-	viper.BindPFlag("output", rootCmd.PersistentFlags().Lookup("output"))
-	viper.BindPFlag("workers", rootCmd.PersistentFlags().Lookup("workers"))
-	viper.BindPFlag("proxy", rootCmd.PersistentFlags().Lookup("proxy"))
-	viper.BindPFlag("user-agent", rootCmd.PersistentFlags().Lookup("user-agent"))
+	if err := viper.BindPFlag("output", rootCmd.PersistentFlags().Lookup("output")); err != nil {
+		return err
+	}
+	if err := viper.BindPFlag("workers", rootCmd.PersistentFlags().Lookup("workers")); err != nil {
+		return err
+	}
+	if err := viper.BindPFlag("proxy", rootCmd.PersistentFlags().Lookup("proxy")); err != nil {
+		return err
+	}
+	if err := viper.BindPFlag("user-agent", rootCmd.PersistentFlags().Lookup("user-agent")); err != nil {
+		return err
+	}
 
 	// Sync variables
 	outputDir = viper.GetString("output")

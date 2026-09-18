@@ -171,7 +171,7 @@ func (m *Manager) handleStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxPayloadBytes)
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 	var received receivedStream
 	if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
 		http.Error(w, "invalid capture payload", http.StatusBadRequest)

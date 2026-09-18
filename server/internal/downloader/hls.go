@@ -6,12 +6,10 @@ import (
 	"crypto/cipher"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/opendownload/opendownload/server/internal/parser"
 	"github.com/opendownload/opendownload/server/internal/util"
@@ -38,12 +36,6 @@ func NewHLSDownloader(client *util.HTTPClient, config HLSDownloaderConfig) *HLSD
 func (d *HLSDownloader) Download(ctx context.Context, playlist *parser.HLSPlaylist, outPath string) error {
 	total := len(playlist.Segments)
 	var completed atomic.Int64
-	start := time.Now()
-
-	type indexedSegment struct {
-		index int
-		data  []byte
-	}
 
 	results := make([][]byte, total)
 	var mu sync.Mutex
@@ -81,10 +73,6 @@ func (d *HLSDownloader) Download(ctx context.Context, playlist *parser.HLSPlayli
 			mu.Unlock()
 
 			done := completed.Add(1)
-			elapsed := time.Since(start).Seconds()
-			if elapsed == 0 {
-				elapsed = 0.001
-			}
 			pct := float64(done) / float64(total) * 100
 			fmt.Printf("\r  Segments: %d/%d (%.1f%%)   ", done, total, pct)
 		}(i, seg)
@@ -101,7 +89,7 @@ func (d *HLSDownloader) Download(ctx context.Context, playlist *parser.HLSPlayli
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	for i, data := range results {
 		if data == nil {
@@ -197,16 +185,4 @@ func pkcs7Unpad(data []byte) []byte {
 		}
 	}
 	return data[:len(data)-padLen]
-}
-
-type hlsProgressWriter struct {
-	total     int
-	completed *atomic.Int64
-	out       io.Writer
-}
-
-func (w *hlsProgressWriter) update() {
-	done := w.completed.Load()
-	pct := float64(done) / float64(w.total) * 100
-	fmt.Fprintf(w.out, "\r  Segments: %d/%d (%.1f%%)   ", done, w.total, pct)
 }

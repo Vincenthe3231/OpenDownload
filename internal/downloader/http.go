@@ -63,7 +63,7 @@ func (d *HTTPDownloader) probeRange(ctx context.Context, url string) (int64, boo
 	if err != nil {
 		return 0, false, transportError("probe range support", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusPartialContent {
 		return 0, false, nil
 	}
@@ -101,7 +101,7 @@ func (d *HTTPDownloader) downloadSingle(ctx context.Context, url, outPath string
 	if err != nil {
 		return transportError("fetch URL", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return validationError("HTTP response", fmt.Sprintf("received %d", resp.StatusCode))
 	}
@@ -217,7 +217,7 @@ func (d *HTTPDownloader) downloadSegment(ctx context.Context, url, outPath strin
 	if err != nil {
 		return transportError("fetch HTTP byte range", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusPartialContent {
 		return validationError("HTTP range response", fmt.Sprintf("expected HTTP 206, received %d", resp.StatusCode))
 	}
@@ -230,7 +230,7 @@ func (d *HTTPDownloader) downloadSegment(ctx context.Context, url, outPath strin
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	buf := make([]byte, 32*1024)
 	offset := start

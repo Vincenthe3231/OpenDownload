@@ -251,7 +251,7 @@ func (client *HTTPClient) Get(ctx context.Context, rawURL string) ([]byte, error
 	if err != nil {
 		return nil, err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		return nil, statusError(response)
@@ -274,7 +274,7 @@ func (client *HTTPClient) Head(ctx context.Context, rawURL string) (size int64, 
 	if err != nil {
 		return 0, false, "", err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return 0, false, "", statusError(response)
 	}

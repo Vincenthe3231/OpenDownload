@@ -9,8 +9,8 @@ function render(status) {
   document.querySelector('label').hidden = false;
   start.hidden = false;
   stop.hidden = !status.active;
-  start.textContent = status.active ? 'Use new pairing code' : 'Start capture';
-  state.textContent = status.active ? 'Capturing only this tab. Paste a fresh code here to replace it.' : 'Open OpenDownload, select Generate pairing code in Detected streams, then paste its generated code here.';
+  start.textContent = status.active ? 'Replace pairing code' : 'Start capture';
+  state.textContent = status.active ? 'Paste the fresh pairing code from OpenDownload below, then select Replace pairing code.' : 'Open OpenDownload, select Generate pairing code in Detected streams, then paste its generated code here.';
   error.textContent = status.error || '';
 }
 

@@ -18,8 +18,10 @@ func NewApp() *App {
 	return &App{}
 }
 
-// startup is called when the app starts. The context is saved
+// startup is called by the Wails lifecycle. The context is saved
 // so we can call the runtime methods
+//
+//nolint:unused // Wails discovers lifecycle hooks by method name.
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 }
