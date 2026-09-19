@@ -48,14 +48,13 @@ const (
 
 // Diagnostic is safe to send over Wails, native messaging, or local history.
 type Diagnostic struct {
-	Code            Code              `json:"code"`
-	Stage           Stage             `json:"stage"`
-	Retryable       bool              `json:"retryable"`
-	UserMessage     string            `json:"userMessage"`
-	DiagnosticID    string            `json:"diagnosticId"`
-	OccurredAt      time.Time         `json:"occurredAt"`
-	TechnicalDetail string            `json:"technicalDetail,omitempty"`
-	SafeContext     map[string]string `json:"safeContext,omitempty"`
+	Code         Code              `json:"code"`
+	Stage        Stage             `json:"stage"`
+	Retryable    bool              `json:"retryable"`
+	UserMessage  string            `json:"userMessage"`
+	DiagnosticID string            `json:"diagnosticId"`
+	OccurredAt   time.Time         `json:"occurredAt"`
+	SafeContext  map[string]string `json:"safeContext,omitempty"`
 }
 
 // Error carries a stable diagnostic while preserving a user-safe error string.
@@ -79,9 +78,10 @@ func NewID() string {
 	return hex.EncodeToString(bytes)
 }
 
-// WithTechnicalDetail returns a copy with sensitive input redacted.
-func (d Diagnostic) WithTechnicalDetail(detail string) Diagnostic {
-	d.TechnicalDetail = Redact(detail)
+// WithTechnicalDetail remains for source compatibility with older callers.
+// Sensitive values must be recorded through TechnicalStore, so this method
+// intentionally discards its input and returns a safe Diagnostic.
+func (d Diagnostic) WithTechnicalDetail(_ string) Diagnostic {
 	return d
 }
 

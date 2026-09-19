@@ -148,10 +148,6 @@ func (app *App) ExportDiagnosticHistory() (string, error) {
 }
 
 func (app *App) setDiagnostic(diagnostic diagnostics.Diagnostic) {
-	if !app.diagnosticHistory.Enabled() {
-		diagnostic.TechnicalDetail = ""
-	}
-	diagnostic = diagnostic.WithTechnicalDetail(diagnostic.TechnicalDetail)
 	_ = app.diagnosticHistory.Record(diagnostic)
 	app.capture.SetDiagnostic(diagnostic)
 }

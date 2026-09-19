@@ -5,16 +5,40 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$repositoryRoot = Split-Path -Parent $PSScriptRoot
 
-if ($Target -eq 'Desktop') {
-    & go build -o build\bin\opendownload-native-host.exe ./cmd/opendownload-native-host
-    if ($LASTEXITCODE -ne 0) {
-        exit $LASTEXITCODE
+function Assert-NSISAvailable {
+    $nsis = Get-Command -Name 'makensis.exe' -ErrorAction SilentlyContinue
+    if ($null -eq $nsis) {
+        $nsis = Get-Command -Name 'makensis' -ErrorAction SilentlyContinue
     }
-
-    & wails build -nsis -installscope user
-    exit $LASTEXITCODE
+    if ($null -eq $nsis) {
+        throw 'NSIS is required to build the desktop installer. Install NSIS and ensure makensis.exe is on PATH.'
+    }
 }
 
-& go build -o build\bin\opendownload-cli.exe ./cmd/cli
-exit $LASTEXITCODE
+if ($Target -eq 'Desktop') {
+    Assert-NSISAvailable
+
+    $nativeHostOutput = Join-Path $repositoryRoot 'build\bin\opendownload-native-host.exe'
+    Push-Location $repositoryRoot
+    try {
+        & go build -o $nativeHostOutput ./cmd/opendownload-native-host
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+
+        & wails build -nsis -installscope user
+        exit $LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
+}
+
+Push-Location $repositoryRoot
+try {
+    & go build -o build\bin\opendownload-cli.exe ./cmd/cli
+    exit $LASTEXITCODE
+} finally {
+    Pop-Location
+}

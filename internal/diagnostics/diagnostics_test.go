@@ -1,6 +1,7 @@
 package diagnostics
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -28,5 +29,17 @@ func TestDiagnosticContextAllowlist(t *testing.T) {
 	})
 	if len(diagnostic.SafeContext) != 2 || diagnostic.SafeContext["browser"] != "Chrome" {
 		t.Fatalf("unexpected safe context: %#v", diagnostic.SafeContext)
+	}
+}
+
+func TestDiagnosticNeverRetainsOrSerializesTechnicalDetail(t *testing.T) {
+	const secret = "Authorization: Bearer browser-secret"
+	diagnostic := New(CapturePayloadInvalid, StageCapture, false, "Invalid capture", "diag-1", time.Unix(1, 0)).WithTechnicalDetail(secret)
+	data, err := json.Marshal(diagnostic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), secret) || strings.Contains(string(data), "technicalDetail") {
+		t.Fatalf("Diagnostic JSON exposed technical data: %s", data)
 	}
 }

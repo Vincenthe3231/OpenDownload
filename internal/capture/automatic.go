@@ -9,8 +9,9 @@ import (
 
 // NativeCapability stays inside the native host and app transport.
 type NativeCapability struct {
-	SessionID string
-	Secret    string
+	SessionID      string
+	Secret         string
+	DiagnosticMode bool
 }
 
 // SetDiagnostic publishes the latest safe diagnostic in capture state.

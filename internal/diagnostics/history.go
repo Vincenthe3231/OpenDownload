@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 )
@@ -30,9 +29,9 @@ func NewHistory() *History {
 		root, _ = os.UserConfigDir()
 	}
 	root = filepath.Join(root, "OpenDownload")
-	history := &History{root: filepath.Join(root, "diagnostics")}
-	history.enabled = readSetting(filepath.Join(root, "settings.json"))
-	return history
+	// Developer diagnostics is a runtime-only control. Never restore it from
+	// disk, even when an older installation persisted the setting.
+	return &History{root: filepath.Join(root, "diagnostics")}
 }
 
 func (h *History) Enabled() bool {
@@ -45,22 +44,12 @@ func (h *History) SetEnabled(enabled bool) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.enabled = enabled
-	if err := os.MkdirAll(filepath.Dir(h.root), 0o700); err != nil {
-		return err
-	}
-	data, err := json.Marshal(map[string]bool{"developerDiagnostics": enabled})
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filepath.Join(filepath.Dir(h.root), "settings.json"), data, 0o600)
+	return nil
 }
 
 func (h *History) Record(diagnostic Diagnostic) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if !h.enabled {
-		diagnostic.TechnicalDetail = ""
-	}
 	diagnostic = redactedDiagnostic(diagnostic)
 	if err := os.MkdirAll(h.root, 0o700); err != nil {
 		return err
@@ -101,9 +90,6 @@ func (h *History) List() ([]Diagnostic, error) {
 		for scanner.Scan() {
 			var diagnostic Diagnostic
 			if json.Unmarshal(scanner.Bytes(), &diagnostic) == nil && time.Since(diagnostic.OccurredAt) <= historyRetention {
-				if !h.enabled {
-					diagnostic.TechnicalDetail = ""
-				}
 				entries = append(entries, redactedDiagnostic(diagnostic))
 			}
 		}
@@ -154,7 +140,6 @@ func (h *History) rotateLocked() error {
 }
 
 func redactedDiagnostic(diagnostic Diagnostic) Diagnostic {
-	diagnostic.TechnicalDetail = Redact(diagnostic.TechnicalDetail)
 	if len(diagnostic.SafeContext) > 0 {
 		copyContext := make(map[string]string, len(diagnostic.SafeContext))
 		for key, value := range diagnostic.SafeContext {
@@ -163,12 +148,4 @@ func redactedDiagnostic(diagnostic Diagnostic) Diagnostic {
 		diagnostic.SafeContext = copyContext
 	}
 	return diagnostic
-}
-
-func readSetting(path string) bool {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(data), `"developerDiagnostics":true`)
 }

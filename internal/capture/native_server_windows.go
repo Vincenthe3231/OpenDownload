@@ -6,6 +6,7 @@ import (
 	"context"
 	"net"
 
+	"github.com/opendownload/opendownload/internal/diagnostics"
 	"github.com/opendownload/opendownload/internal/nativepipe"
 	"github.com/opendownload/opendownload/internal/nativeprotocol"
 )
@@ -48,25 +49,34 @@ func (m *Manager) serveNativeConnection(conn net.Conn) {
 		if err := nativeprotocol.Read(conn, &message); err != nil {
 			return
 		}
+		if err := message.ValidateProtocol(); err != nil {
+			_ = writePipeFailure(conn, pipeFailure(diagnostics.IPCProtocolInvalid, false, "OpenDownload Capture needs an update before it can connect."))
+			continue
+		}
 		switch message.Type {
 		case "start":
 			created, err := m.StartAutomatic(message.Browser, message.TabID)
 			if err != nil {
-				_ = nativeprotocol.Write(conn, nativeprotocol.Message{Type: "error", Error: err.Error()})
+				_ = writePipeFailure(conn, pipeFailure(diagnostics.CaptureRequestRejected, true, "Could not start automatic capture."))
 				continue
 			}
 			capability = created
-			if err := nativeprotocol.Write(conn, nativeprotocol.Message{Type: "started", SessionID: capability.SessionID, SessionSecret: capability.Secret}); err != nil {
+			if err := nativeprotocol.Write(conn, nativeprotocol.Message{
+				Type:           "started",
+				SessionID:      capability.SessionID,
+				SessionSecret:  capability.Secret,
+				DiagnosticMode: capability.DiagnosticMode,
+			}); err != nil {
 				return
 			}
 		case "stream":
 			if message.Stream == nil {
-				_ = nativeprotocol.Write(conn, nativeprotocol.Message{Type: "error", ErrorCode: "CAPTURE_PAYLOAD_INVALID", Error: "capture stream is missing"})
+				_ = writePipeFailure(conn, pipeFailure(diagnostics.CapturePayloadInvalid, false, "The browser sent an invalid media request."))
 				continue
 			}
 			err := m.AcceptAutomaticStream(message.SessionID, message.SessionSecret, message.TabID, *message.Stream)
 			if err != nil {
-				_ = nativeprotocol.Write(conn, nativeprotocol.Message{Type: "error", ErrorCode: "CAPTURE_REQUEST_REJECTED", Error: err.Error()})
+				_ = writePipeFailure(conn, pipeFailure(diagnostics.CaptureRequestRejected, false, "OpenDownload did not accept this media request."))
 				continue
 			}
 			if err := nativeprotocol.Write(conn, nativeprotocol.Message{Type: "accepted"}); err != nil {
@@ -77,7 +87,20 @@ func (m *Manager) serveNativeConnection(conn net.Conn) {
 			_ = nativeprotocol.Write(conn, nativeprotocol.Message{Type: "stopped"})
 			return
 		default:
-			_ = nativeprotocol.Write(conn, nativeprotocol.Message{Type: "error", ErrorCode: "IPC_PROTOCOL_INVALID", Error: "unsupported native message"})
+			_ = writePipeFailure(conn, pipeFailure(diagnostics.IPCProtocolInvalid, false, "OpenDownload Capture received an unsupported message."))
 		}
 	}
+}
+
+func pipeFailure(code diagnostics.Code, retryable bool, userMessage string) *nativeprotocol.Failure {
+	return &nativeprotocol.Failure{
+		Code:         string(code),
+		UserMessage:  userMessage,
+		Retryable:    retryable,
+		DiagnosticID: diagnostics.NewID(),
+	}
+}
+
+func writePipeFailure(conn net.Conn, failure *nativeprotocol.Failure) error {
+	return nativeprotocol.Write(conn, nativeprotocol.Message{Type: "error", Failure: failure})
 }

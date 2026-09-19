@@ -12,39 +12,47 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/opendownload/opendownload/internal/diagnostics"
 )
 
 // Manager owns one local browser capture session and its in memory request data.
 type Manager struct {
-	mu            sync.Mutex
-	server        *http.Server
-	listener      net.Listener
-	token         string
-	expires       time.Time
-	paired        bool
-	streams       map[string]storedStream
-	streamOrder   []string
-	seen          map[string]struct{}
-	mode          Mode
-	nativeStatus  NativeConnectionStatus
-	browser       string
-	tabID         int64
-	autoSessionID string
-	autoSecret    string
-	now           func() time.Time
-	listeners     map[uint64]Listener
-	nextListener  uint64
+	mu                     sync.Mutex
+	server                 *http.Server
+	listener               net.Listener
+	token                  string
+	expires                time.Time
+	paired                 bool
+	streams                map[string]storedStream
+	streamOrder            []string
+	seen                   map[string]struct{}
+	mode                   Mode
+	nativeStatus           NativeConnectionStatus
+	browser                string
+	tabID                  int64
+	autoSessionID          string
+	autoSecret             string
+	diagnosticMode         bool
+	technicalStore         *diagnostics.TechnicalStore
+	diagnosticReporter     func(diagnostics.Diagnostic)
+	technicalDiagnosticIDs map[string]struct{}
+	now                    func() time.Time
+	listeners              map[uint64]Listener
+	nextListener           uint64
 }
 
 // NewManager returns an idle capture manager.
 func NewManager() *Manager {
 	return &Manager{
-		streams:      make(map[string]storedStream),
-		seen:         make(map[string]struct{}),
-		now:          time.Now,
-		listeners:    make(map[uint64]Listener),
-		mode:         ModeManual,
-		nativeStatus: NativeDisconnected,
+		streams:                make(map[string]storedStream),
+		seen:                   make(map[string]struct{}),
+		now:                    time.Now,
+		listeners:              make(map[uint64]Listener),
+		technicalStore:         diagnostics.NewTechnicalStore(),
+		technicalDiagnosticIDs: make(map[string]struct{}),
+		mode:                   ModeManual,
+		nativeStatus:           NativeDisconnected,
 	}
 }
 

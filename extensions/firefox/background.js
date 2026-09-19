@@ -1,5 +1,5 @@
 let capture = null;
-let lastError = '';
+let lastFailure = null;
 const pending = new Map();
 
 function nativeRequest(port, message) {
