@@ -25,6 +25,42 @@ The desktop build is the normal release path. Run the build helper without argum
 
 Do not use `go build .` or `go build -o opendownload.exe .` for the desktop application. Wails performs the frontend build, binding generation, Windows resource packaging, and production executable build.
 
+## Build the Windows installer
+
+Use the desktop build helper for installer builds:
+
+```powershell
+.\scripts\build.ps1 -Target Desktop
+```
+
+This command builds `opendownload-native-host.exe` first, verifies that the output is fresh and non-empty, then runs Wails with NSIS packaging. The generated installer is placed at:
+
+```text
+.\build\bin\OpenDownload-amd64-installer.exe
+```
+
+Do not use `wails build -nsis` by itself for a release installer. Direct Wails packaging does not rebuild the native host, so it can package an older `build\bin\opendownload-native-host.exe` beside a newer desktop executable. If you must invoke Wails directly, rebuild the host first:
+
+```powershell
+go build -o .\build\bin\opendownload-native-host.exe .\cmd\opendownload-native-host
+wails build -nsis -installscope user
+```
+
+The installer copies the desktop executable, native host, Gecko registration script, and Firefox extension ID configuration. It registers the host for the current Windows user under `HKCU\Software\Mozilla\NativeMessagingHosts\com.opendownload.capture`.
+
+After installation, start the installed OpenDownload application before selecting automatic capture in the Firefox or Zen extension. Automatic capture requires both the registered native host and the desktop named-pipe server. Use the registration script's inspection action when troubleshooting:
+
+```powershell
+$installRoot = "$env:LOCALAPPDATA\Programs\OpenDownload"
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File "$installRoot\register-native-host.ps1" `
+  -Action Inspect `
+  -InstallRoot $installRoot `
+  -ConfigPath "$installRoot\browser-ids.json"
+```
+
+An inspection result with `"healthy":true` confirms static host registration, manifest paths, and the Firefox extension ID. It does not confirm that OpenDownload is running or that the native host can connect to the desktop named pipe. Close older OpenDownload processes, launch the installed executable, and reload the extension before retrying automatic capture.
+
 ## Advanced CLI build
 
 Build the CLI entry point:
