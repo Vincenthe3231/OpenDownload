@@ -14,8 +14,16 @@ export function ExportDiagnosticHistory() {
   return window['go']['main']['App']['ExportDiagnosticHistory']();
 }
 
+export function GetAutomaticCaptureStatus() {
+  return window['go']['main']['App']['GetAutomaticCaptureStatus']();
+}
+
 export function GetCaptureSession() {
   return window['go']['main']['App']['GetCaptureSession']();
+}
+
+export function GetTechnicalContext(arg1) {
+  return window['go']['main']['App']['GetTechnicalContext'](arg1);
 }
 
 export function ListCapturedStreams() {
@@ -38,6 +46,10 @@ export function QueueDownload(arg1) {
   return window['go']['main']['App']['QueueDownload'](arg1);
 }
 
+export function RepairAutomaticCapture() {
+  return window['go']['main']['App']['RepairAutomaticCapture']();
+}
+
 export function SetCaptureDiagnostic(arg1) {
   return window['go']['main']['App']['SetCaptureDiagnostic'](arg1);
 }
@@ -48,6 +60,10 @@ export function SetDeveloperDiagnostics(arg1) {
 
 export function StartFirefoxCapture() {
   return window['go']['main']['App']['StartFirefoxCapture']();
+}
+
+export function StartManualCapture() {
+  return window['go']['main']['App']['StartManualCapture']();
 }
 
 export function StopBrowserCapture() {

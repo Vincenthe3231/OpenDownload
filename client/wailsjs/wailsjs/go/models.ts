@@ -169,6 +169,79 @@ export namespace diagnostics {
 		    return a;
 		}
 	}
+	export class TechnicalDiagnostic {
+	    diagnosticId: string;
+	    // Go type: time
+	    occurredAt: any;
+	    rawError?: string;
+	    requestId?: string;
+	    requestMethod?: string;
+	    requestType?: string;
+	    requestTimestamp?: number;
+	    requestFrameId?: number;
+	    requestParentFrameId?: number;
+	    requestUrl?: string;
+	    requestDocumentUrl?: string;
+	    requestOriginUrl?: string;
+	    requestInitiator?: string;
+	    requestHeaders?: Record<string, string>;
+	    responseHeaders?: Record<string, string>;
+	    responseStatusLine?: string;
+	    responseFromCache?: boolean;
+	    responseIp?: string;
+	    nativeHostDetail?: string;
+	    pipeDetail?: string;
+	    httpStatus?: number;
+	    truncated: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new TechnicalDiagnostic(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.diagnosticId = source["diagnosticId"];
+	        this.occurredAt = this.convertValues(source["occurredAt"], null);
+	        this.rawError = source["rawError"];
+	        this.requestId = source["requestId"];
+	        this.requestMethod = source["requestMethod"];
+	        this.requestType = source["requestType"];
+	        this.requestTimestamp = source["requestTimestamp"];
+	        this.requestFrameId = source["requestFrameId"];
+	        this.requestParentFrameId = source["requestParentFrameId"];
+	        this.requestUrl = source["requestUrl"];
+	        this.requestDocumentUrl = source["requestDocumentUrl"];
+	        this.requestOriginUrl = source["requestOriginUrl"];
+	        this.requestInitiator = source["requestInitiator"];
+	        this.requestHeaders = source["requestHeaders"];
+	        this.responseHeaders = source["responseHeaders"];
+	        this.responseStatusLine = source["responseStatusLine"];
+	        this.responseFromCache = source["responseFromCache"];
+	        this.responseIp = source["responseIp"];
+	        this.nativeHostDetail = source["nativeHostDetail"];
+	        this.pipeDetail = source["pipeDetail"];
+	        this.httpStatus = source["httpStatus"];
+	        this.truncated = source["truncated"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 }
 
@@ -217,6 +290,64 @@ export namespace download {
 
 export namespace main {
 	
+	export class AutomaticCaptureFailure {
+	    code: string;
+	    userMessage: string;
+	    retryable: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new AutomaticCaptureFailure(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.code = source["code"];
+	        this.userMessage = source["userMessage"];
+	        this.retryable = source["retryable"];
+	    }
+	}
+	export class AutomaticCaptureStatus {
+	    hostExecutableFound: boolean;
+	    manifestExists: boolean;
+	    manifestPathMatchesInstall: boolean;
+	    manifestExtensionIdMatches: boolean;
+	    mozillaRegistryPointsToExpectedManifest: boolean;
+	    healthy: boolean;
+	    failure?: AutomaticCaptureFailure;
+	
+	    static createFrom(source: any = {}) {
+	        return new AutomaticCaptureStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.hostExecutableFound = source["hostExecutableFound"];
+	        this.manifestExists = source["manifestExists"];
+	        this.manifestPathMatchesInstall = source["manifestPathMatchesInstall"];
+	        this.manifestExtensionIdMatches = source["manifestExtensionIdMatches"];
+	        this.mozillaRegistryPointsToExpectedManifest = source["mozillaRegistryPointsToExpectedManifest"];
+	        this.healthy = source["healthy"];
+	        this.failure = this.convertValues(source["failure"], AutomaticCaptureFailure);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class CapturedDownloadRequest {
 	    id: string;
 	    capturedStreamId: string;
