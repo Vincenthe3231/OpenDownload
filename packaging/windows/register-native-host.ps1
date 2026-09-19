@@ -5,13 +5,25 @@ param(
 
   [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA 'Programs\OpenDownload'),
 
-  [string]$ConfigPath = (Join-Path $PSScriptRoot 'browser-ids.json'),
+  [string]$ConfigPath,
 
   # Tests may use a non-browser HKCU key. Production must keep the default.
   [string]$RegistryRoot = 'HKCU:\Software\Mozilla\NativeMessagingHosts'
 )
 
 $ErrorActionPreference = 'Stop'
+
+$ScriptDirectory = $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($ScriptDirectory)) {
+  $ScriptDirectory = Split-Path -Parent ([string]$MyInvocation.MyCommand.Path)
+}
+if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
+  if ([string]::IsNullOrWhiteSpace($ScriptDirectory)) {
+    throw 'Could not resolve the native-host configuration directory.'
+  }
+  $ConfigPath = Join-Path -Path $ScriptDirectory -ChildPath 'browser-ids.json'
+}
+$ConfigPath = [System.IO.Path]::GetFullPath($ConfigPath)
 
 $HostName = 'com.opendownload.capture'
 $InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)

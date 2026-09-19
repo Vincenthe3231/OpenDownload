@@ -35,7 +35,7 @@ if ($SkipRegistry) {
 }
 
 $testId = [Guid]::NewGuid().ToString('N')
-$testInstallRoot = Join-Path ([System.IO.Path]::GetTempPath()) "opendownload-native-host-$testId"
+$testInstallRoot = Join-Path ([System.IO.Path]::GetTempPath()) "OpenDownload Native Host-$testId"
 $testRegistryRoot = "HKCU:\Software\OpenDownload\Tests\$testId\NativeMessagingHosts"
 $testRegistryParent = "HKCU:\Software\OpenDownload\Tests\$testId"
 $hostName = 'com.opendownload.capture'
@@ -46,10 +46,13 @@ try {
   New-Item -ItemType Directory -Path $testInstallRoot -Force | Out-Null
   [System.IO.File]::WriteAllBytes((Join-Path $testInstallRoot 'opendownload-native-host.exe'), [byte[]]@(0))
 
-  & $registrationScript -Action Install -InstallRoot $testInstallRoot -ConfigPath $configPath -RegistryRoot $testRegistryRoot
-  Assert-True ($LASTEXITCODE -eq 0) 'Install action should succeed against the test registry root.'
+  try {
+    & $registrationScript -Action Install -InstallRoot $testInstallRoot -RegistryRoot $testRegistryRoot | Out-Null
+  } catch {
+    throw "Install action should succeed against the test registry root: $($_.Exception.Message)"
+  }
 
-  $status = (& $registrationScript -Action Inspect -InstallRoot $testInstallRoot -ConfigPath $configPath -RegistryRoot $testRegistryRoot | ConvertFrom-Json)
+  $status = (& $registrationScript -Action Inspect -InstallRoot $testInstallRoot -RegistryRoot $testRegistryRoot | ConvertFrom-Json)
   Assert-True $status.healthy 'Inspect should report a healthy test installation.'
   Assert-True $status.hostExecutableFound 'Inspect should find the test native host.'
   Assert-True $status.manifestExists 'Inspect should find the Firefox manifest.'
@@ -61,12 +64,12 @@ try {
   Assert-True (@(Get-ChildItem -LiteralPath (Split-Path -Parent $testManifestPath) -Filter '*.tmp' -File).Count -eq 0) 'Atomic manifest write must not leave temporary files.'
 
   Set-ItemProperty -LiteralPath $testRegistrationKey -Name '(default)' -Value (Join-Path $testInstallRoot 'foreign.json')
-  & $registrationScript -Action Uninstall -InstallRoot $testInstallRoot -ConfigPath $configPath -RegistryRoot $testRegistryRoot
+  & $registrationScript -Action Uninstall -InstallRoot $testInstallRoot -RegistryRoot $testRegistryRoot
   Assert-True (Test-Path -LiteralPath $testRegistrationKey) 'Uninstall must preserve a registration owned by another installation.'
   Assert-True (Test-Path -LiteralPath $testManifestPath) 'Uninstall must preserve a manifest when registration ownership is lost.'
 
   Set-ItemProperty -LiteralPath $testRegistrationKey -Name '(default)' -Value $testManifestPath
-  & $registrationScript -Action Uninstall -InstallRoot $testInstallRoot -ConfigPath $configPath -RegistryRoot $testRegistryRoot
+  & $registrationScript -Action Uninstall -InstallRoot $testInstallRoot -RegistryRoot $testRegistryRoot
   Assert-True (-not (Test-Path -LiteralPath $testRegistrationKey)) 'Uninstall should remove its own registration.'
   Assert-True (-not (Test-Path -LiteralPath $testManifestPath)) 'Uninstall should remove its own manifest.'
 
