@@ -21,11 +21,19 @@ if ($Target -eq 'Desktop') {
     Assert-NSISAvailable
 
     $nativeHostOutput = Join-Path $repositoryRoot 'build\bin\opendownload-native-host.exe'
+    $buildStartedAt = Get-Date
     Push-Location $repositoryRoot
     try {
         & go build -o $nativeHostOutput ./cmd/opendownload-native-host
         if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
+        }
+        if (-not (Test-Path -LiteralPath $nativeHostOutput -PathType Leaf)) {
+            throw "Native host build did not produce: $nativeHostOutput"
+        }
+        $nativeHost = Get-Item -LiteralPath $nativeHostOutput
+        if ($nativeHost.Length -le 0 -or $nativeHost.LastWriteTime -lt $buildStartedAt) {
+            throw "Native host build output is stale or empty: $nativeHostOutput"
         }
 
         & wails build -nsis -installscope user
