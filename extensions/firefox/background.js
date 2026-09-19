@@ -70,31 +70,72 @@ function selectedHeaders(headers) {
   return result;
 }
 
+function rawHeaders(headers) {
+  const result = {};
+  for (const header of headers || []) {
+    if (!header || typeof header.name !== 'string' || typeof header.value !== 'string') continue;
+    if (Object.prototype.hasOwnProperty.call(result, header.name)) {
+      result[header.name] = `${result[header.name]}, ${header.value}`;
+    } else {
+      result[header.name] = header.value;
+    }
+  }
+  return result;
+}
+
+function debugContextFromRequest(details) {
+  return {
+    requestId: typeof details.requestId === 'string' ? details.requestId : '',
+    requestUrl: details.url,
+    requestMethod: typeof details.method === 'string' ? details.method : '',
+    requestType: typeof details.type === 'string' ? details.type : '',
+    requestTimestamp: typeof details.timeStamp === 'number' ? details.timeStamp : 0,
+    requestFrameId: Number.isInteger(details.frameId) ? details.frameId : 0,
+    requestParentFrameId: Number.isInteger(details.parentFrameId) ? details.parentFrameId : 0,
+    requestDocumentUrl: typeof details.documentUrl === 'string' ? details.documentUrl : '',
+    requestOriginUrl: typeof details.originUrl === 'string' ? details.originUrl : '',
+    requestInitiator: typeof details.initiator === 'string' ? details.initiator : '',
+    requestHeaders: rawHeaders(details.requestHeaders),
+  };
+}
+
+function addResponseDebug(debug, details) {
+  debug.responseHeaders = rawHeaders(details.responseHeaders);
+  debug.responseStatus = Number.isInteger(details.statusCode) ? details.statusCode : 0;
+  debug.responseStatusLine = typeof details.statusLine === 'string' ? details.statusLine : '';
+  debug.responseFromCache = details.fromCache === true;
+  debug.responseIp = typeof details.ip === 'string' ? details.ip : '';
+}
+
 async function sendCapture(request, type) {
   const session = capture;
   if (!session) return;
   if (session.mode === 'automatic') {
     try {
-      const response = await nativeRequest(session.port, { type: 'stream', tabId: session.tabId, stream: { url: request.url, type, headers: request.headers } });
+      const message = { protocolVersion: 1, type: 'stream', tabId: session.tabId, stream: { url: request.url, type, headers: request.headers } };
+      if (session.diagnosticMode === true && request.debug) message.debug = request.debug;
+      const response = await nativeRequest(session.port, message);
       if (!response || response.type !== 'accepted' || capture !== session) session.error = 'OpenDownload did not accept the stream.';
     } catch {
       if (capture === session) session.error = 'Could not send the stream to OpenDownload.';
     }
     return;
   }
+  const payload = { url: request.url, type, headers: request.headers };
+  if (session.diagnosticMode === true && request.debug) payload.debug = request.debug;
   const response = await fetch(`${session.endpoint}/v1/firefox/streams`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       OpenDownloadSession: session.token,
     },
-    body: JSON.stringify({ url: request.url, type, headers: request.headers }),
+    body: JSON.stringify(payload),
   });
   if (!response.ok && capture === session) {
     if (response.status === 401) {
       capture = null;
       pending.clear();
-      lastError = 'Pairing expired or was replaced. Paste the fresh code from OpenDownload and select Start capture.';
+      lastFailure = 'Pairing expired or was replaced. Paste the fresh code from OpenDownload and select Start capture.';
       return;
     }
     session.error = 'OpenDownload did not accept the stream.';
@@ -110,9 +151,11 @@ function rememberRequest(requestID, request) {
 }
 
 browser.webRequest.onSendHeaders.addListener(
-  (details) => {
-    if (!capture || details.tabId !== capture.tabId) return;
-    rememberRequest(details.requestId, { url: details.url, headers: selectedHeaders(details.requestHeaders) });
+    (details) => {
+      if (!capture || details.tabId !== capture.tabId) return;
+    const request = { url: details.url, headers: selectedHeaders(details.requestHeaders) };
+    if (capture.diagnosticMode === true) request.debug = debugContextFromRequest(details);
+    rememberRequest(details.requestId, request);
   },
   { urls: ['<all_urls>'] },
   ['requestHeaders'],
@@ -123,6 +166,7 @@ browser.webRequest.onHeadersReceived.addListener(
     const request = pending.get(details.requestId);
     pending.delete(details.requestId);
     if (!capture || !request || details.tabId !== capture.tabId || details.statusCode < 200 || details.statusCode >= 300) return;
+    if (capture.diagnosticMode === true && request.debug) addResponseDebug(request.debug, details);
     const type = mediaType(request.url, details.responseHeaders || []);
     if (type) sendCapture(request, type).catch(() => {
       if (capture) capture.error = 'Could not send the stream to OpenDownload.';
@@ -137,61 +181,86 @@ browser.webRequest.onErrorOccurred.addListener(
   { urls: ['<all_urls>'] },
 );
 
+const automaticCaptureMessage = 'Automatic capture is unavailable. Open OpenDownload, then repair the native host or use manual pairing.';
+
+function safeNativeFailure(response) {
+  const failure = response && response.failure;
+  return failure && typeof failure.userMessage === 'string' && failure.userMessage ? failure.userMessage : automaticCaptureMessage;
+}
+
+async function manualCaptureOptions(pairing) {
+  try {
+    const response = await fetch(`${pairing.endpoint}/v1/firefox/capture-options`, {
+      headers: { OpenDownloadSession: pairing.token },
+    });
+    if (!response.ok) return false;
+    const options = await response.json();
+    return options && options.protocolVersion === 1 && options.diagnosticMode === true;
+  } catch {
+    return false;
+  }
+}
+
 function handleMessage(message) {
   if (message.type === 'start') {
-    return browser.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+    return browser.tabs.query({ active: true, currentWindow: true }).then(async ([tab]) => {
       if (!tab || tab.id === undefined || !/^https?:/.test(tab.url || '')) {
         throw new Error('Open a website in the active tab before starting capture.');
       }
       pending.clear();
-      lastError = '';
-	  if (message.manual === true) {
-		const pairing = normalizePairingCode(message.code);
-		capture = { ...pairing, tabId: tab.id, error: '' };
-		return Promise.resolve(status());
-	  }
+      lastFailure = null;
+      if (message.manual === true) {
+        const pairing = normalizePairingCode(message.code);
+        const diagnosticMode = await manualCaptureOptions(pairing);
+        capture = { ...pairing, mode: 'manual', diagnosticMode, tabId: tab.id, error: '' };
+        return status();
+      }
 
-	  try {
-		const port = browser.runtime.connectNative('com.opendownload.capture');
-		port.onDisconnect.addListener(() => {
-			if (capture && capture.mode === 'automatic' && capture.port === port) {
-				capture = null;
-				pending.clear();
-				lastError = 'Automatic capture host disconnected. Repair the native host or use manual pairing.';
-			}
-		});
-		return nativeRequest(port, { type: 'start', browser: 'firefox', tabId: tab.id }).then((response) => {
-			if (!response || response.type !== 'started') throw new Error(response && response.error ? response.error : 'Automatic capture is unavailable.');
-			capture = { mode: 'automatic', tabId: tab.id, port, error: '' };
-			return status();
-		}).catch((reason) => {
-			if (!message.code) throw reason;
-			const pairing = normalizePairingCode(message.code);
-			capture = { ...pairing, tabId: tab.id, error: '' };
-			return status();
-		});
-	  } catch (reason) {
-		if (!message.code) throw reason;
-		const pairing = normalizePairingCode(message.code);
-		capture = { ...pairing, tabId: tab.id, error: '' };
-		return Promise.resolve(status());
-	  }
+      let port;
+      try {
+        port = browser.runtime.connectNative('com.opendownload.capture');
+      } catch {
+        lastFailure = automaticCaptureMessage;
+        throw new Error(lastFailure);
+      }
+      port.onDisconnect.addListener(() => {
+        if (capture && capture.mode === 'automatic' && capture.port === port) {
+          capture = null;
+          pending.clear();
+          lastFailure = 'Automatic capture host disconnected. Repair the native host or use manual pairing.';
+        }
+      });
+
+      let failureMessage = automaticCaptureMessage;
+      return nativeRequest(port, { protocolVersion: 1, type: 'start', browser: 'firefox', tabId: tab.id }).then((response) => {
+        if (!response || response.type !== 'started') {
+          failureMessage = safeNativeFailure(response);
+          throw new Error(failureMessage);
+        }
+        capture = { mode: 'automatic', diagnosticMode: response.diagnosticMode === true, tabId: tab.id, port, error: '' };
+        return status();
+      }).catch(() => {
+        pending.clear();
+        lastFailure = failureMessage;
+        if (port && typeof port.disconnect === 'function') port.disconnect();
+        throw new Error(failureMessage);
+      });
     });
   }
   if (message.type === 'stop') {
     if (capture && capture.mode === 'automatic') {
-      return nativeRequest(capture.port, { type: 'stop' }).catch(() => {}).then(() => {
+      return nativeRequest(capture.port, { protocolVersion: 1, type: 'stop' }).catch(() => {}).then(() => {
         if (capture.port && typeof capture.port.disconnect === 'function') capture.port.disconnect();
         capture = null;
         pending.clear();
-        lastError = '';
+        lastFailure = null;
         return status();
       });
     }
     capture = null;
     pending.clear();
-    lastError = '';
-    return status();
+    lastFailure = null;
+    return Promise.resolve(status());
   }
   return Promise.resolve(status());
 }
@@ -199,5 +268,5 @@ function handleMessage(message) {
 browser.runtime.onMessage.addListener(handleMessage);
 
 function status() {
-  return capture ? { active: true, mode: capture.mode || 'manual', error: capture.error } : { active: false, mode: 'manual', error: lastError };
+  return capture ? { active: true, mode: capture.mode || 'manual', error: capture.error || '' } : { active: false, mode: 'manual', error: lastFailure || '' };
 }

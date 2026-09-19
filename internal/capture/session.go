@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/opendownload/opendownload/internal/diagnostics"
+	"github.com/opendownload/opendownload/internal/nativeprotocol"
 )
 
 // Manager owns one local browser capture session and its in memory request data.
@@ -43,6 +44,13 @@ type Manager struct {
 }
 
 // NewManager returns an idle capture manager.
+const captureOptionsRoute = "/v1/firefox/capture-options"
+
+type captureOptionsResponse struct {
+	ProtocolVersion int  `json:"protocolVersion"`
+	DiagnosticMode  bool `json:"diagnosticMode"`
+}
+
 func NewManager() *Manager {
 	return &Manager{
 		streams:                make(map[string]storedStream),
@@ -102,6 +110,7 @@ func (m *Manager) Start() (Pairing, error) {
 	m.tabID = 0
 	m.autoSessionID = ""
 	m.autoSecret = ""
+	m.diagnosticMode = false
 	m.token = token
 	m.expires = m.now().Add(pairingLifetime)
 	m.paired = false
@@ -140,6 +149,7 @@ func (m *Manager) Stop() {
 	m.tabID = 0
 	m.autoSessionID = ""
 	m.autoSecret = ""
+	m.diagnosticMode = false
 	m.streams = make(map[string]storedStream)
 	m.streamOrder = nil
 	m.seen = make(map[string]struct{})
@@ -187,9 +197,13 @@ func (m *Manager) Get(id string) (Stream, map[string]string, bool) {
 func (m *Manager) handleStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, "+sessionHeader)
-	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if r.URL.Path == captureOptionsRoute {
+		m.handleCaptureOptions(w, r)
 		return
 	}
 	if r.Method != http.MethodPost || r.URL.Path != captureRoute || !isLoopback(r.RemoteAddr) {
@@ -207,13 +221,16 @@ func (m *Manager) handleStream(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxPayloadBytes)
 	defer func() { _ = r.Body.Close() }()
-	var received receivedStream
+	var received struct {
+		receivedStream
+		Debug *nativeprotocol.DebugContext `json:"debug,omitempty"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
 		http.Error(w, "invalid capture payload", http.StatusBadRequest)
 		return
 	}
 
-	stream, headers, err := validate(received, m.now())
+	stream, headers, err := validate(received.receivedStream, m.now())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -233,7 +250,11 @@ func (m *Manager) handleStream(w http.ResponseWriter, r *http.Request) {
 	}
 	m.evictOldestLocked()
 	m.seen[stream.URL] = struct{}{}
-	m.streams[stream.ID] = storedStream{Stream: stream, headers: headers}
+	stored := storedStream{Stream: stream, headers: headers}
+	if m.diagnosticModeLocked() {
+		stored.debug = cloneDebug(received.Debug)
+	}
+	m.streams[stream.ID] = stored
 	m.streamOrder = append(m.streamOrder, stream.ID)
 	summary := summarize(stream)
 	session := m.sessionLocked()
@@ -254,6 +275,32 @@ func (m *Manager) evictOldestLocked() {
 		delete(m.seen, stream.URL)
 	}
 	delete(m.streams, oldestID)
+}
+
+func (m *Manager) handleCaptureOptions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet || !isLoopback(r.RemoteAddr) {
+		http.NotFound(w, r)
+		return
+	}
+
+	m.mu.Lock()
+	valid := m.token != "" && (m.paired || m.now().Before(m.expires)) && r.Header.Get(sessionHeader) == m.token
+	diagnosticMode := false
+	if valid {
+		diagnosticMode = m.technicalStore != nil && m.technicalStore.Enabled()
+		m.diagnosticMode = diagnosticMode
+	}
+	m.mu.Unlock()
+	if !valid {
+		http.Error(w, "invalid pairing", http.StatusUnauthorized)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(captureOptionsResponse{
+		ProtocolVersion: 1,
+		DiagnosticMode:  diagnosticMode,
+	})
 }
 
 func (m *Manager) sessionLocked() SessionSnapshot {

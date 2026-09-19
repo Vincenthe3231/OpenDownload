@@ -58,6 +58,43 @@ func TestHandleStreamRejectsExpiredPairing(t *testing.T) {
 	}
 }
 
+func TestHandleCaptureOptionsRequiresAuthenticatedLoopbackPairing(t *testing.T) {
+	manager := NewManager()
+	manager.token = "test-token"
+	manager.expires = time.Now().Add(time.Minute)
+	req := httptest.NewRequest(http.MethodGet, "/v1/firefox/capture-options", nil)
+	req.RemoteAddr = "127.0.0.1:50001"
+	req.Header.Set("OpenDownloadSession", "test-token")
+	response := httptest.NewRecorder()
+
+	manager.handleStream(response, req)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	var options captureOptionsResponse
+	if err := json.NewDecoder(response.Body).Decode(&options); err != nil {
+		t.Fatal(err)
+	}
+	if options.ProtocolVersion != 1 || options.DiagnosticMode {
+		t.Fatalf("unexpected capture options: %#v", options)
+	}
+}
+
+func TestHandleCaptureOptionsRejectsInvalidPairing(t *testing.T) {
+	manager := NewManager()
+	manager.token = "test-token"
+	manager.expires = time.Now().Add(time.Minute)
+	req := httptest.NewRequest(http.MethodGet, "/v1/firefox/capture-options", nil)
+	req.RemoteAddr = "127.0.0.1:50001"
+	req.Header.Set("OpenDownloadSession", "wrong-token")
+	response := httptest.NewRecorder()
+
+	manager.handleStream(response, req)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnauthorized)
+	}
+}
+
 func TestHandleStreamKeepsPairedSessionAfterPairingExpiry(t *testing.T) {
 	manager := NewManager()
 	manager.token = "paired"
