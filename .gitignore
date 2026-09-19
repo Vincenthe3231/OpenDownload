@@ -24,6 +24,8 @@ Thumbs.db
 
 # Project-specific
 download/
+!internal/download/
+!internal/download/**
 .state
 
 **/node_modules/

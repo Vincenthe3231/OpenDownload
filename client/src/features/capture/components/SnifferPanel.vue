@@ -1,112 +1,94 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { ArrowDownTrayIcon, ClipboardDocumentIcon, PlayIcon } from '@heroicons/vue/24/outline';
-import { queueCapturedStream, startBrowserCapture } from '../api';
-import { subscribeToCaptureEvents, type CaptureEventSubscription } from '../events';
-import { useCaptureStore } from '../store';
-import { useDownloadStore } from '../../downloads/store';
-import type { CaptureStreamSummary } from '../types';
-import { formatDateTime } from '../../../shared/formatters/dateTime';
+import AutomaticCaptureStatusCard from './AutomaticCaptureStatusCard.vue';
+import CaptureSessionContent from './CaptureSessionContent.vue';
+import DeveloperDiagnosticsPanel from './DeveloperDiagnosticsPanel.vue';
+import TechnicalDiagnosticsDialog from './TechnicalDiagnosticsDialog.vue';
+import { useSnifferPanel } from '../composables/useSnifferPanel';
 
-const capture = useCaptureStore();
-const downloads = useDownloadStore();
-const pairingCode = ref('');
-const pairingExpiresAt = ref('');
-const currentTime = ref(Date.now());
-const error = ref('');
-const loading = ref(false);
-let eventSubscription: CaptureEventSubscription | undefined;
-let expiryTimer: ReturnType<typeof setInterval> | undefined;
-
-const isCaptureActive = computed(() => capture.session.active);
-const isAutomatic = computed(() => capture.session.mode === 'automatic');
-const pairingExpired = computed(() => {
-  const expiresAt = Date.parse(pairingExpiresAt.value);
-  return !Number.isNaN(expiresAt) && currentTime.value >= expiresAt;
-});
-const expiresText = computed(() => {
-  if (!pairingExpiresAt.value) return '';
-  return pairingExpired.value
-    ? 'This pairing code has expired. Generate a fresh code below without restarting OpenDownload.'
-    : `Pairing code expires at ${formatDateTime(pairingExpiresAt.value)}.`;
-});
-
-watch(
-  () => capture.session.active,
-  (active) => {
-    if (!active) {
-      pairingCode.value = '';
-      pairingExpiresAt.value = '';
-    }
-  },
-);
-
-async function start(): Promise<void> {
-  error.value = '';
-  loading.value = true;
-  try {
-    const pairing = await startBrowserCapture();
-    pairingCode.value = pairing.code;
-    pairingExpiresAt.value = pairing.expiresAt;
-    capture.setSession({ active: true, paired: false, expiresAt: pairing.expiresAt });
-    await eventSubscription?.hydrate();
-  } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : 'Could not start browser capture.';
-  } finally {
-    loading.value = false;
-  }
-}
-
-async function copyPairingCode(): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(pairingCode.value);
-  } catch {
-    error.value = 'Copy the pairing code directly from the field.';
-  }
-}
-
-async function download(stream: CaptureStreamSummary): Promise<void> {
-  error.value = '';
-  const id = crypto.randomUUID();
-  try {
-    downloads.apply(await queueCapturedStream({ id, capturedStreamId: stream.id, outputDir: '' }));
-  } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : 'Could not download the captured stream.';
-  }
-}
-
-onMounted(() => {
-  expiryTimer = setInterval(() => {
-    currentTime.value = Date.now();
-  }, 1000);
-  eventSubscription = subscribeToCaptureEvents(capture);
-  void eventSubscription.hydrate().catch(() => {
-    error.value = 'Could not restore captured streams.';
-  });
-});
-
-onBeforeUnmount(() => {
-  if (expiryTimer !== undefined) clearInterval(expiryTimer);
-  eventSubscription?.dispose();
-});
+const {
+  capture,
+  pairingCode,
+  expiresText,
+  pairingExpired,
+  loading,
+  automaticStatusLoading,
+  repairLoading,
+  diagnosticsLoading,
+  diagnosticsEnabled,
+  automaticNeedsRepair,
+  automaticStatusLabel,
+  automaticStatusMessage,
+  automaticStatusTone,
+  statusChecks,
+  technicalDialogStreamID,
+  technicalDialogStream,
+  technicalContext,
+  technicalLoading,
+  error,
+  statusError,
+  refreshAutomaticStatus,
+  repairAutomaticCapture,
+  start,
+  copyPairingCode,
+  download,
+  toggleDeveloperDiagnostics,
+  openTechnicalContext,
+  closeTechnicalContext,
+} = useSnifferPanel();
 </script>
 
 <template>
   <div class="panel-content">
-    <div class="panel-heading"><div><p class="eyebrow">CAPTURE</p><h2>Detected streams</h2></div><span class="count-badge">{{ capture.streams.length }}</span>
+    <div class="panel-heading">
+      <div><p class="eyebrow">CAPTURE</p><h2>Detected streams</h2></div>
+      <span class="count-badge">{{ capture.streams.length }}</span>
     </div>
-	    <div v-if="!isCaptureActive" class="empty-state capture-empty"><p>Capture from Chrome, Edge, Firefox, or Zen</p><span>Start capture from the browser extension. Manual pairing remains available if automatic connection needs repair.</span><button class="capture-action" type="button" :disabled="loading" @click="start"><PlayIcon aria-hidden="true" />{{ loading ? 'Starting' : 'Use manual pairing' }}</button>
-	    </div>
-	    <div v-else class="capture-active">
-	      <div v-if="isAutomatic" class="capture-help">Automatic capture · {{ capture.session.nativeStatus }}<span v-if="capture.session.browser"> · {{ capture.session.browser }}</span><span v-if="capture.session.tabId"> · selected tab {{ capture.session.tabId }}</span></div>
-	      <div v-if="!isAutomatic" class="pairing-row"><input aria-label="Browser pairing code" readonly :value="pairingCode" /><button class="icon-button compact" type="button" title="Copy pairing code" aria-label="Copy pairing code" @click="copyPairingCode"><ClipboardDocumentIcon aria-hidden="true" /></button></div>
-	      <p v-if="!isAutomatic" class="capture-help">Paste this pairing code into the browser extension, then play media in its active tab. {{ expiresText }}</p>
-	      <button v-if="!isAutomatic" class="capture-action" type="button" :disabled="loading" @click="start"><PlayIcon aria-hidden="true" />{{ loading ? 'Generating' : pairingExpired ? 'Generate fresh pairing code' : 'Refresh pairing code' }}</button>
-      <ul v-if="capture.streams.length" class="stream-list"><li v-for="stream in capture.streams" :key="stream.id"><div class="stream-summary"><strong>{{ stream.name }}</strong><span>{{ stream.host }} · {{ stream.type }}</span></div><button class="icon-button compact" type="button" title="Download captured stream" :aria-label="`Download ${stream.name}`" @click="download(stream)"><ArrowDownTrayIcon aria-hidden="true" /></button></li>
-      </ul>
-      <div v-else class="empty-state capture-waiting"><p>Waiting for media</p><span>Only requests from the tab selected in the add on are captured.</span></div>
-    </div>
-    <p v-if="capture.session.diagnostic" class="form-error" role="alert">{{ capture.session.diagnostic.userMessage }} <span v-if="capture.session.diagnostic.code">({{ capture.session.diagnostic.code }})</span></p>
-    <p v-else-if="error" class="form-error" role="alert">{{ error }}</p>
+
+    <AutomaticCaptureStatusCard
+      :tone="automaticStatusTone"
+      :label="automaticStatusLabel"
+      :message="automaticStatusMessage"
+      :loading="automaticStatusLoading"
+      :needs-repair="automaticNeedsRepair"
+      :repair-loading="repairLoading"
+      :checks="statusChecks"
+      @repair="repairAutomaticCapture"
+      @refresh="refreshAutomaticStatus"
+    />
+
+    <CaptureSessionContent
+      :session="capture.session"
+      :pairing-code="pairingCode"
+      :expires-text="expiresText"
+      :pairing-expired="pairingExpired"
+      :loading="loading"
+      :streams="capture.streams"
+      :diagnostics-enabled="diagnosticsEnabled"
+      @start="start"
+      @copy-pairing-code="copyPairingCode"
+      @download="download"
+      @technical-details="openTechnicalContext"
+    />
+
+    <TechnicalDiagnosticsDialog
+      :open="Boolean(technicalDialogStreamID)"
+      :stream="technicalDialogStream"
+      :detail="technicalDialogStreamID ? technicalContext[technicalDialogStreamID] : undefined"
+      :loading="technicalDialogStreamID ? Boolean(technicalLoading[technicalDialogStreamID]) : false"
+      @close="closeTechnicalContext"
+    />
+
+    <DeveloperDiagnosticsPanel
+      :enabled="diagnosticsEnabled"
+      :loading="diagnosticsLoading"
+      :has-streams="capture.streams.length > 0"
+      @toggle="toggleDeveloperDiagnostics"
+    />
+
+    <p v-if="capture.session.diagnostic" class="form-error" role="alert">
+      {{ capture.session.diagnostic.userMessage }}
+      <span v-if="capture.session.diagnostic.code">({{ capture.session.diagnostic.code }})</span>
+    </p>
+    <p v-else-if="statusError || error" class="form-error" role="alert">{{ statusError || error }}</p>
   </div>
 </template>

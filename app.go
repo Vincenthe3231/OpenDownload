@@ -67,7 +67,7 @@ func NewApp() *App {
 	captureManager.SetTechnicalStore(technicalStore)
 	app := &App{
 		capture:           captureManager,
-		downloads:         download.NewService(download.Config{}),
+		downloads:         download.NewService(download.Config{TechnicalStore: technicalStore}),
 		diagnosticHistory: diagnostics.NewHistory(),
 		technicalStore:    technicalStore,
 		registration:      nativehost.NewRegistrationRunner(),
@@ -316,6 +316,9 @@ func (app *App) QueueCapturedStream(request CapturedDownloadRequest) (download.J
 		URL:       stream.URL,
 		OutputDir: request.OutputDir,
 		Headers:   headers,
+		TechnicalContext: func() *diagnostics.TechnicalDiagnostic {
+			return app.capture.TechnicalContext(request.CapturedStreamID)
+		},
 	})
 }
 
