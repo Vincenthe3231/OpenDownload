@@ -102,6 +102,9 @@ func Write(w io.Writer, message Message) error {
 	if message.ProtocolVersion == 0 {
 		message.ProtocolVersion = ProtocolVersion
 	}
+	if err := message.ValidateProtocol(); err != nil {
+		return err
+	}
 	payload, err := json.Marshal(message)
 	if err != nil {
 		return err
