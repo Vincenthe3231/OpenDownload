@@ -42,7 +42,7 @@ func (m *Manager) StartNativeServer(ctx context.Context) (func(), error) {
 }
 
 func (m *Manager) serveNativeConnection(conn net.Conn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	var capability NativeCapability
 	for {
 		var message nativeprotocol.Message
@@ -74,7 +74,7 @@ func (m *Manager) serveNativeConnection(conn net.Conn) {
 				_ = writePipeFailure(conn, pipeFailure(diagnostics.CapturePayloadInvalid, false, "The browser sent an invalid media request."))
 				continue
 			}
-			err := m.AcceptAutomaticStream(message.SessionID, message.SessionSecret, message.TabID, *message.Stream)
+			err := m.AcceptAutomaticStreamWithDebug(message.SessionID, message.SessionSecret, message.TabID, *message.Stream, message.Debug)
 			if err != nil {
 				_ = writePipeFailure(conn, pipeFailure(diagnostics.CaptureRequestRejected, false, "OpenDownload did not accept this media request."))
 				continue

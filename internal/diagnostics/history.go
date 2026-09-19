@@ -65,9 +65,12 @@ func (h *History) Record(diagnostic Diagnostic) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	_, err = file.Write(append(data, '\n'))
-	return err
+	_, writeErr := file.Write(append(data, '\n'))
+	closeErr := file.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	return closeErr
 }
 
 func (h *History) List() ([]Diagnostic, error) {

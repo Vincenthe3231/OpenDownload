@@ -84,6 +84,11 @@ func (m *Manager) reportCaptureDiagnostic(diagnostic diagnostics.Diagnostic, tec
 	}
 }
 
+func (m *Manager) reportAutomaticFailure(code diagnostics.Code, retryable bool, userMessage string, err error) {
+	diagnostic := diagnostics.New(code, diagnostics.StageCapture, retryable, userMessage, diagnostics.NewID(), m.now())
+	m.reportCaptureDiagnostic(diagnostic, diagnostics.TechnicalDiagnostic{RawError: err.Error()})
+}
+
 // TechnicalContext returns a copy of the selected stream's raw Gecko request
 // context while developer diagnostics remains enabled. It is intentionally
 // absent from all stream summaries and events.

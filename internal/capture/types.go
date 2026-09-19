@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/opendownload/opendownload/internal/diagnostics"
+	"github.com/opendownload/opendownload/internal/nativeprotocol"
 )
 
 // Stream contains request metadata and private request headers retained only in memory.
@@ -74,6 +75,7 @@ type receivedStream struct {
 type storedStream struct {
 	Stream
 	headers map[string]string
+	debug   *nativeprotocol.DebugContext
 }
 
 func summarize(stream Stream) StreamSummary {

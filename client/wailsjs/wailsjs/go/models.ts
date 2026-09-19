@@ -134,7 +134,6 @@ export namespace diagnostics {
 	    diagnosticId: string;
 	    // Go type: time
 	    occurredAt: any;
-	    technicalDetail?: string;
 	    safeContext?: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
@@ -149,7 +148,6 @@ export namespace diagnostics {
 	        this.userMessage = source["userMessage"];
 	        this.diagnosticId = source["diagnosticId"];
 	        this.occurredAt = this.convertValues(source["occurredAt"], null);
-	        this.technicalDetail = source["technicalDetail"];
 	        this.safeContext = source["safeContext"];
 	    }
 	
