@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/opendownload/opendownload/internal/capture"
@@ -208,6 +209,15 @@ func (app *App) GetTechnicalContext(streamID string) *diagnostics.TechnicalDiagn
 		return nil
 	}
 	return app.capture.TechnicalContext(streamID)
+}
+
+// GetDownloadTechnicalContext returns sensitive download detail only while the
+// runtime-only developer diagnostic mode is enabled.
+func (app *App) GetDownloadTechnicalContext(diagnosticID string) *diagnostics.TechnicalDiagnostic {
+	if app.technicalStore == nil || strings.TrimSpace(diagnosticID) == "" || !app.DeveloperDiagnosticsEnabled() {
+		return nil
+	}
+	return app.technicalStore.Get(diagnosticID)
 }
 
 // GetAutomaticCaptureStatus inspects the installed Gecko native-host wiring.

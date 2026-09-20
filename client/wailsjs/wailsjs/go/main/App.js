@@ -22,6 +22,10 @@ export function GetCaptureSession() {
   return window['go']['main']['App']['GetCaptureSession']();
 }
 
+export function GetDownloadTechnicalContext(arg1) {
+  return window['go']['main']['App']['GetDownloadTechnicalContext'](arg1);
+}
+
 export function GetTechnicalContext(arg1) {
   return window['go']['main']['App']['GetTechnicalContext'](arg1);
 }

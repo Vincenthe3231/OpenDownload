@@ -1,4 +1,5 @@
 import { getAppBridge } from '../../shared/wails/app';
+import { parseTechnicalDiagnostic, type TechnicalDiagnostic } from '../../shared/diagnostics/technical';
 import { parseJobSnapshot } from '../downloads/api';
 import type { CapturedDownloadRequest, JobSnapshot } from '../downloads/types';
 import type {
@@ -8,7 +9,6 @@ import type {
   CaptureSessionSnapshot,
   CaptureStreamSummary,
   Pairing,
-  TechnicalDiagnostic,
 } from './types';
 
 interface CaptureBridge {
@@ -112,38 +112,6 @@ function stringMapValue(value: unknown): Record<string, string> | undefined {
     if (typeof entry === 'string') result[key] = entry;
   }
   return Object.keys(result).length ? result : undefined;
-}
-
-export function parseTechnicalDiagnostic(value: unknown): TechnicalDiagnostic | null {
-  const raw = asRecord(value);
-  if (!raw || typeof raw.diagnosticId !== 'string' || typeof raw.occurredAt !== 'string') {
-    return null;
-  }
-
-  return {
-    diagnosticId: raw.diagnosticId,
-    occurredAt: raw.occurredAt,
-    rawError: typeof raw.rawError === 'string' ? raw.rawError : undefined,
-    requestId: typeof raw.requestId === 'string' ? raw.requestId : undefined,
-    requestMethod: typeof raw.requestMethod === 'string' ? raw.requestMethod : undefined,
-    requestType: typeof raw.requestType === 'string' ? raw.requestType : undefined,
-    requestTimestamp: numberValue(raw.requestTimestamp),
-    requestFrameId: numberValue(raw.requestFrameId),
-    requestParentFrameId: numberValue(raw.requestParentFrameId),
-    requestUrl: typeof raw.requestUrl === 'string' ? raw.requestUrl : undefined,
-    requestDocumentUrl: typeof raw.requestDocumentUrl === 'string' ? raw.requestDocumentUrl : undefined,
-    requestOriginUrl: typeof raw.requestOriginUrl === 'string' ? raw.requestOriginUrl : undefined,
-    requestInitiator: typeof raw.requestInitiator === 'string' ? raw.requestInitiator : undefined,
-    requestHeaders: stringMapValue(raw.requestHeaders),
-    responseHeaders: stringMapValue(raw.responseHeaders),
-    responseStatusLine: typeof raw.responseStatusLine === 'string' ? raw.responseStatusLine : undefined,
-    responseFromCache: typeof raw.responseFromCache === 'boolean' ? raw.responseFromCache : undefined,
-    responseIp: typeof raw.responseIp === 'string' ? raw.responseIp : undefined,
-    nativeHostDetail: typeof raw.nativeHostDetail === 'string' ? raw.nativeHostDetail : undefined,
-    pipeDetail: typeof raw.pipeDetail === 'string' ? raw.pipeDetail : undefined,
-    httpStatus: typeof raw.httpStatus === 'number' ? raw.httpStatus : undefined,
-    truncated: booleanValue(raw.truncated),
-  };
 }
 
 export function parsePairing(value: unknown): Pairing | null {

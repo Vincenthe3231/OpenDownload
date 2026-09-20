@@ -12,10 +12,10 @@ import {
 import { subscribeToCaptureEvents, type CaptureEventSubscription } from '../events';
 import { useCaptureStore } from '../store';
 import { useDownloadStore } from '../../downloads/store';
+import type { TechnicalDiagnostic } from '../../../shared/diagnostics/technical';
 import type {
   AutomaticCaptureStatus,
   CaptureStreamSummary,
-  TechnicalDiagnostic,
 } from '../types';
 import { formatDateTime } from '../../../shared/formatters/dateTime';
 

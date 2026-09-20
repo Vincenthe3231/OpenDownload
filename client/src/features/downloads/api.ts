@@ -1,4 +1,5 @@
 import { getAppBridge } from '../../shared/wails/app';
+import { parseTechnicalDiagnostic, type TechnicalDiagnostic } from '../../shared/diagnostics/technical';
 import { DOWNLOAD_STATUSES } from './constants';
 import type { DownloadDiagnostic, DownloadRequest, DownloadStatus, JobSnapshot } from './types';
 
@@ -6,6 +7,7 @@ interface DownloadBridge {
   QueueDownload(request: DownloadRequest): Promise<unknown>;
   CancelDownload(jobID: string): Promise<unknown>;
   ListDownloadJobs(): Promise<unknown>;
+  GetDownloadTechnicalContext(diagnosticID: string): Promise<unknown>;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -107,4 +109,8 @@ export async function listDownloadJobs(): Promise<JobSnapshot[]> {
   }
 
   return response.map(requiredSnapshot);
+}
+
+export async function getDownloadTechnicalContext(diagnosticID: string): Promise<TechnicalDiagnostic | null> {
+  return parseTechnicalDiagnostic(await bridge().GetDownloadTechnicalContext(diagnosticID));
 }

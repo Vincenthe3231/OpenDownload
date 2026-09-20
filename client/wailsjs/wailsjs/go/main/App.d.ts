@@ -15,6 +15,8 @@ export function GetAutomaticCaptureStatus():Promise<main.AutomaticCaptureStatus>
 
 export function GetCaptureSession():Promise<capture.SessionSnapshot>;
 
+export function GetDownloadTechnicalContext(arg1:string):Promise<diagnostics.TechnicalDiagnostic>;
+
 export function GetTechnicalContext(arg1:string):Promise<diagnostics.TechnicalDiagnostic>;
 
 export function ListCapturedStreams():Promise<Array<capture.StreamSummary>>;

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue';
 import { ExclamationTriangleIcon, XMarkIcon } from '@heroicons/vue/24/outline';
-import type { CaptureStreamSummary, TechnicalDiagnostic } from '../types';
+import type { TechnicalDiagnostic } from '../../../shared/diagnostics/technical';
+import type { CaptureStreamSummary } from '../types';
 
 interface Props {
   open: boolean;

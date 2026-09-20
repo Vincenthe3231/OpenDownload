@@ -42,6 +42,40 @@ func TestDeveloperDiagnosticsToggleControlsTechnicalStore(t *testing.T) {
 	}
 }
 
+func TestDownloadTechnicalContextUsesOpaqueDiagnosticIDAndClears(t *testing.T) {
+	app := NewApp()
+	const diagnosticID = "download-diagnostic-id"
+
+	if got := app.GetDownloadTechnicalContext(diagnosticID); got != nil {
+		t.Fatal("download technical context was available while diagnostics were disabled")
+	}
+	if got := app.GetDownloadTechnicalContext(" "); got != nil {
+		t.Fatal("blank diagnostic ID returned technical context")
+	}
+
+	if err := app.SetDeveloperDiagnostics(true); err != nil {
+		t.Fatalf("enable developer diagnostics: %v", err)
+	}
+	app.technicalStore.Record(diagnostics.TechnicalDiagnostic{
+		DiagnosticID:   diagnosticID,
+		RequestURL:     "https://example.test/video.mp4",
+		RawError:       "request failed",
+		RequestHeaders: map[string]string{"Cookie": "session-secret"},
+	})
+
+	got := app.GetDownloadTechnicalContext(diagnosticID)
+	if got == nil || got.RequestURL != "https://example.test/video.mp4" || got.RequestHeaders["Cookie"] != "session-secret" {
+		t.Fatalf("unexpected download technical context: %#v", got)
+	}
+
+	if err := app.SetDeveloperDiagnostics(false); err != nil {
+		t.Fatalf("disable developer diagnostics: %v", err)
+	}
+	if got := app.GetDownloadTechnicalContext(diagnosticID); got != nil {
+		t.Fatal("download technical context survived diagnostics disable")
+	}
+}
+
 func TestStartupRecordsSafeNativeServerFailure(t *testing.T) {
 	app := NewApp()
 	app.startNativeServer = func(context.Context) (func(), error) {
