@@ -2,6 +2,7 @@ package downloader
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -38,12 +39,20 @@ func NewHTTPDownloader(client *transport.HTTPClient, config HTTPDownloaderConfig
 // Download transfers url into the exact caller supplied work path. It never
 // renames or removes a separate final destination.
 func (d *HTTPDownloader) Download(ctx context.Context, url, outPath string) error {
-	size, _, _, err := d.client.Head(ctx, url)
-	if err != nil {
-		return transportError("inspect URL", err)
-	}
 	reporter := newProgressReporter(d.config.OnProgress)
 	defer reporter.finish()
+
+	size, _, _, err := d.client.Head(ctx, url)
+	if err != nil {
+		// Some media servers reject HEAD while serving the same resource over
+		// GET. Continue with a single-stream GET so captured MP4 endpoints do
+		// not fail before receiving their first byte.
+		var statusErr *transport.HTTPStatusError
+		if errors.As(err, &statusErr) && statusErr.StatusCode != http.StatusMethodNotAllowed && statusErr.StatusCode != http.StatusNotImplemented {
+			return transportError("inspect URL", err)
+		}
+		return d.downloadSingle(ctx, url, outPath, 0, reporter)
+	}
 	reporter.bytes(0, size, true)
 
 	if d.config.Workers > 1 {
@@ -104,6 +113,11 @@ func (d *HTTPDownloader) downloadSingle(ctx context.Context, url, outPath string
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return validationError("HTTP response", fmt.Sprintf("received %d", resp.StatusCode))
+	}
+	if totalSize <= 0 {
+		if contentLength, parseErr := strconv.ParseInt(resp.Header.Get("Content-Length"), 10, 64); parseErr == nil && contentLength > 0 {
+			totalSize = contentLength
+		}
 	}
 
 	file, err := createWorkOutput(outPath)

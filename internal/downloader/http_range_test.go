@@ -92,6 +92,29 @@ func TestHTTPDownloaderFallsBackWhenRangeProbeIsInvalid(t *testing.T) {
 	}
 }
 
+func TestHTTPDownloaderFallsBackToGetWhenHeadIsRejected(t *testing.T) {
+	payload := []byte("head fallback payload")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+
+	path := filepath.Join(t.TempDir(), "movie.mp4")
+	err := NewHTTPDownloader(transport.NewHTTPClient(transport.HTTPClientConfig{}), HTTPDownloaderConfig{Workers: 4}).Download(context.Background(), server.URL, path)
+	if err != nil {
+		t.Fatalf("download failed after HEAD rejection: %v", err)
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil || string(contents) != string(payload) {
+		t.Fatalf("fallback output = %q, err = %v", contents, err)
+	}
+}
+
 func TestOrderedSegmentsWritesSourceOrderAndCleansPartialFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "playlist.ts")
 	data := []string{"first", "second", "third"}

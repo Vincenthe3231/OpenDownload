@@ -5,6 +5,7 @@ package capture
 import (
 	"context"
 	"net"
+	"sync"
 
 	"github.com/opendownload/opendownload/internal/diagnostics"
 	"github.com/opendownload/opendownload/internal/nativepipe"
@@ -17,12 +18,31 @@ func (m *Manager) StartNativeServer(ctx context.Context) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	stop := make(chan struct{})
+	stopSignal := make(chan struct{})
+	var stopOnce sync.Once
+	var connectionsMu sync.Mutex
+	connections := make(map[net.Conn]struct{})
+	stopped := false
+	stop := func() {
+		stopOnce.Do(func() {
+			close(stopSignal)
+			_ = listener.Close()
+
+			connectionsMu.Lock()
+			stopped = true
+			for conn := range connections {
+				_ = conn.Close()
+			}
+			connectionsMu.Unlock()
+
+			m.Stop()
+		})
+	}
 	go func() {
 		select {
 		case <-ctx.Done():
-			_ = listener.Close()
-		case <-stop:
+			stop()
+		case <-stopSignal:
 		}
 	}()
 	go func() {
@@ -31,14 +51,27 @@ func (m *Manager) StartNativeServer(ctx context.Context) (func(), error) {
 			if acceptErr != nil {
 				return
 			}
-			go m.serveNativeConnection(conn)
+
+			connectionsMu.Lock()
+			if stopped {
+				connectionsMu.Unlock()
+				_ = conn.Close()
+				continue
+			}
+			connections[conn] = struct{}{}
+			connectionsMu.Unlock()
+
+			go func() {
+				defer func() {
+					connectionsMu.Lock()
+					delete(connections, conn)
+					connectionsMu.Unlock()
+				}()
+				m.serveNativeConnection(conn)
+			}()
 		}
 	}()
-	return func() {
-		close(stop)
-		_ = listener.Close()
-		m.Stop()
-	}, nil
+	return stop, nil
 }
 
 func (m *Manager) serveNativeConnection(conn net.Conn) {

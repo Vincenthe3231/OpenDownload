@@ -249,6 +249,9 @@ func TestServicePublishesSafeDiagnosticAndTechnicalContext(t *testing.T) {
 	if failed.Message != "Authentication is required to download this source." {
 		t.Fatalf("message = %q, want safe compatibility text", failed.Message)
 	}
+	if failed.OutputPath != "" {
+		t.Fatalf("failed download retained an output path: %q", failed.OutputPath)
+	}
 	if failed.Diagnostic.SafeContext["httpStatus"] != "401" {
 		t.Fatalf("safe HTTP status = %#v", failed.Diagnostic.SafeContext)
 	}

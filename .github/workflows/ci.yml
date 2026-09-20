@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.8
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: client/pnpm-lock.yaml
+
+      - name: Install client dependencies
+        shell: pwsh
+        run: pnpm install --dir client --frozen-lockfile
+
+      - name: Run client checks
+        shell: pwsh
+        run: pnpm --dir client test
+
+      - name: Run Go tests
+        shell: pwsh
+        run: go test ./...
+
+      - name: Validate native-host registration inputs
+        shell: pwsh
+        run: .\packaging\windows\test-register-native-host.ps1 -SkipRegistry
+
+      - name: Install Wails CLI
+        shell: pwsh
+        run: |
+          $goBin = Join-Path (go env GOPATH) 'bin'
+          $goBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+
+      - name: Ensure NSIS is available
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis.exe -ErrorAction SilentlyContinue)) {
+            choco install nsis -y --no-progress
+            $env:PATH = "${env:ProgramFiles(x86)}\NSIS;$env:PATH"
+          }
+          if (-not (Get-Command makensis.exe -ErrorAction SilentlyContinue)) {
+            throw 'NSIS is required for installer verification.'
+          }
+
+      - name: Package Gecko extension
+        shell: pwsh
+        run: |
+          $manifest = Get-Content -LiteralPath 'extensions\firefox\manifest.json' -Raw | ConvertFrom-Json
+          if ([string]::IsNullOrWhiteSpace($manifest.applications.gecko.id)) {
+            throw 'The Gecko extension manifest is missing its Mozilla extension ID.'
+          }
+          New-Item -ItemType Directory -Path 'build\artifacts' -Force | Out-Null
+          Compress-Archive -Path 'extensions\firefox\*' -DestinationPath 'build\artifacts\opendownload-firefox-extension.zip' -Force
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: .\scripts\build.ps1 -Target Desktop
+
+      - name: Verify installer contents
+        shell: pwsh
+        run: |
+          $installer = 'build\bin\OpenDownload-amd64-installer.exe'
+          $nativeHost = 'build\bin\opendownload-native-host.exe'
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
+            throw "Installer was not produced: $installer"
+          }
+          if ((Get-Item -LiteralPath $installer).Length -le 0) {
+            throw "Installer is empty: $installer"
+          }
+          if (-not (Test-Path -LiteralPath $nativeHost -PathType Leaf)) {
+            throw "Native host was not produced: $nativeHost"
+          }
+          if ((Get-Item -LiteralPath $nativeHost).Length -le 0) {
+            throw "Native host is empty: $nativeHost"
+          }
+
+      - name: Upload release verification artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: opendownload-windows-release-verification
+          path: |
+            build/bin/OpenDownload-amd64-installer.exe
+            build/artifacts/opendownload-firefox-extension.zip

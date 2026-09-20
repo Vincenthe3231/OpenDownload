@@ -459,6 +459,9 @@ func (service *Service) finish(id string, status Status, diagnostic *diagnostics
 	}
 	jobState.snapshot.Status = status
 	jobState.snapshot.Message = ""
+	if status != StatusCompleted {
+		jobState.snapshot.OutputPath = ""
+	}
 	jobState.snapshot.Diagnostic = cloneDiagnostic(diagnostic)
 	if diagnostic != nil {
 		jobState.snapshot.Message = diagnostic.UserMessage

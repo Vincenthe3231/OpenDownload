@@ -90,16 +90,22 @@ Inspect a URL before downloading:
 
 ## Browser capture
 
-The desktop app can capture authorized media requests from Chrome, Edge, Firefox, or Zen without installing a local root certificate or intercepting TLS. It captures only the tab you select in the browser extension.
+The desktop app can capture authorized media requests from Chrome, Edge, Firefox, or Zen without installing a local root certificate or intercepting TLS. The browser-extension workflow is the normal capture path, automatic capture does not need a proxy, and only the tab you select in the browser extension is captured.
 
-### Firefox and Zen
+### Firefox and Zen automatic capture
 
-1. Open `about:debugging#/runtime/this-firefox` in Firefox Developer Edition or Zen.
-2. Select **Load Temporary Add-on** and choose `extensions/firefox/manifest.json`.
-3. In the OpenDownload desktop app, find the **Detected streams** card and select **Start capture**.
-4. OpenDownload displays a long pairing code in that card. Select the copy icon beside it.
-5. Open the browser extension, paste that code into **Code from OpenDownload desktop app**, then select **Start capture** while the streaming tab is active.
-6. Play the media, then select a detected stream in OpenDownload to download it with the captured request context.
+1. Install OpenDownload with the Windows installer. The installer registers the Firefox native capture host for the current Windows user.
+2. Open `about:debugging#/runtime/this-firefox` in Firefox Developer Edition or Zen.
+3. Select **Load Temporary Add-on** and choose `extensions/firefox/manifest.json`.
+4. Start the installed OpenDownload desktop app before opening the extension on the streaming tab.
+5. Open the browser extension and select **Start automatic capture**. No pairing code, proxy, root certificate, or TLS interception is needed for this path.
+6. Play authorized media, then select a detected stream in OpenDownload to download it with the captured request context.
+
+If the extension reports that automatic capture needs attention, select **Repair automatic capture** in the desktop app, restart the installed app if requested, and reload the temporary extension. Use manual pairing only as the recovery path when the native host cannot be repaired:
+
+1. In the OpenDownload desktop app, select **Use manual pairing** and copy the generated code.
+2. In the browser extension, paste the code into **Code from OpenDownload desktop app** and select **Start capture** while the streaming tab is active.
+3. Play the media, then select a detected stream in OpenDownload to download it with the captured request context.
 
 ### Chrome and Edge
 
@@ -111,13 +117,13 @@ The desktop app can capture authorized media requests from Chrome, Edge, Firefox
 
 The Chrome and Edge package is an unpacked MV3 extension for Chromium 102 or later. It requests broad HTTP and HTTPS site access because media can come from a separate CDN domain. Chrome and Edge are supported, and other Chromium browsers are best effort. See [extensions/chromium/README.md](extensions/chromium/README.md) for browser-specific behavior and final-header notes.
 
-The pairing code combines a system selected loopback port with a fresh 256 bit cryptographic token. It is accepted only from `127.0.0.1` and expires for initial pairing after five minutes. Use **Refresh pairing code** in the desktop app to replace an expired code without relaunching OpenDownload. Refreshing invalidates the previous code. The token is never written to disk or displayed in captured stream metadata. Cookie and authorization values remain in memory for the active desktop session, are not displayed or logged, and are cleared when capture stops or the app exits.
+Manual pairing combines a system-selected loopback port with a fresh 256 bit cryptographic token. It is accepted only from `127.0.0.1` and expires for initial pairing after five minutes. Use **Refresh pairing code** in the desktop app to replace an expired code without relaunching OpenDownload. Refreshing invalidates the previous code. The token is never written to disk or displayed in captured stream metadata. Cookie and authorization values remain in memory for the active desktop session, are not displayed or logged, and are cleared when capture stops or the app exits.
 
 This protects against network access and token guessing. It does not protect against another local process that obtains the active pairing code, so stop capture when you are finished. The browser extensions request broad host access because streams can come from a separate CDN domain, but they record only the active tab you explicitly selected.
 
 ## Proxy capture
 
-The CLI proxy is an optional fallback for advanced use cases. Prefer the Firefox and Zen pairing flow above because it preserves ordinary browser certificate verification.
+The CLI proxy is an optional fallback for advanced use cases. It is not needed for Firefox or Zen automatic capture. Prefer the browser-extension flow above because it preserves ordinary browser certificate verification.
 
 ```powershell
 .\build\bin\opendownload-cli.exe proxy run
@@ -149,6 +155,8 @@ go test ./...
 go test -race ./...
 wails build
 ```
+
+Use [docs/release-checklist.md](docs/release-checklist.md) for the installer, Gecko extension, browser smoke tests, and diagnostics privacy checks required before a release.
 
 Project layout:
 

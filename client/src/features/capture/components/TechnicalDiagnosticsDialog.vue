@@ -98,7 +98,7 @@ function technicalRows(detail: TechnicalDiagnostic): TechnicalRow[] {
 
       <div class="technical-dialog-body">
         <p v-if="loading" class="technical-loading">Loading in-memory technical context…</p>
-        <p v-else-if="detail === null" class="technical-empty">No technical context was retained for this stream.</p>
+        <p v-else-if="detail === null" class="technical-empty">No technical context was retained for this stream. Enable developer diagnostics before starting or reconnecting capture, then capture a new request.</p>
         <template v-else-if="detail">
           <p class="diagnostics-warning technical-dialog-warning" role="note">
             <ExclamationTriangleIcon aria-hidden="true" />

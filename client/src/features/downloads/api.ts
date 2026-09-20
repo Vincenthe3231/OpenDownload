@@ -1,6 +1,6 @@
 import { getAppBridge } from '../../shared/wails/app';
 import { DOWNLOAD_STATUSES } from './constants';
-import type { DownloadRequest, DownloadStatus, JobSnapshot } from './types';
+import type { DownloadDiagnostic, DownloadRequest, DownloadStatus, JobSnapshot } from './types';
 
 interface DownloadBridge {
   QueueDownload(request: DownloadRequest): Promise<unknown>;
@@ -18,6 +18,34 @@ function stringValue(value: unknown): string {
 
 function numberValue(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function stringMapValue(value: unknown): Record<string, string> | undefined {
+  const raw = asRecord(value);
+  if (!raw) return undefined;
+
+  const result: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(raw)) {
+    if (typeof entry === 'string') result[key] = entry;
+  }
+  return Object.keys(result).length ? result : undefined;
+}
+
+function parseDownloadDiagnostic(value: unknown): DownloadDiagnostic | undefined {
+  const raw = asRecord(value);
+  if (!raw || typeof raw.code !== 'string' || typeof raw.stage !== 'string' || typeof raw.userMessage !== 'string' || typeof raw.diagnosticId !== 'string') {
+    return undefined;
+  }
+
+  return {
+    code: raw.code,
+    stage: raw.stage,
+    retryable: raw.retryable === true,
+    userMessage: raw.userMessage,
+    diagnosticId: raw.diagnosticId,
+    occurredAt: stringValue(raw.occurredAt),
+    safeContext: stringMapValue(raw.safeContext),
+  };
 }
 
 function isDownloadStatus(value: unknown): value is DownloadStatus {
@@ -44,6 +72,7 @@ export function parseJobSnapshot(value: unknown): JobSnapshot | null {
     hasEta: raw.hasEta === true,
     activeConnections: numberValue(raw.activeConnections),
     message: stringValue(raw.message),
+    diagnostic: parseDownloadDiagnostic(raw.diagnostic),
     version: numberValue(raw.version),
   };
 }

@@ -44,6 +44,11 @@ export function formatProgressDetail(job: JobSnapshot): string {
   }
 
   if (job.status === 'failed') {
+    if (job.diagnostic) {
+      return job.downloadedBytes > 0
+        ? `Download failed after ${formatBytes(job.downloadedBytes)}. See diagnostic details below.`
+        : 'Download failed. See diagnostic details below.';
+    }
     return job.message || (job.downloadedBytes > 0 ? `Stopped after ${formatBytes(job.downloadedBytes)}` : 'Download failed');
   }
 

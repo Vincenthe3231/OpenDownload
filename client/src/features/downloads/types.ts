@@ -14,6 +14,16 @@ export interface CapturedDownloadRequest {
   outputDir: string;
 }
 
+export interface DownloadDiagnostic {
+  code: string;
+  stage: string;
+  retryable: boolean;
+  userMessage: string;
+  diagnosticId: string;
+  occurredAt: string;
+  safeContext?: Record<string, string>;
+}
+
 export interface JobSnapshot {
   id: string;
   name: string;
@@ -28,5 +38,6 @@ export interface JobSnapshot {
   hasEta: boolean;
   activeConnections: number;
   message: string;
+  diagnostic?: DownloadDiagnostic;
   version: number;
 }

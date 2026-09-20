@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { formatDownloadStatus, formatProgressDetail } from '../formatters';
 import { hasKnownProgress, progressPercentage } from '../progress';
 import type { JobSnapshot } from '../types';
+import DownloadDiagnosticDetails from './DownloadDiagnosticDetails.vue';
 
 const props = defineProps<{ item: JobSnapshot }>();
 const emit = defineEmits<{ cancel: [id: string] }>();
@@ -25,7 +26,8 @@ function requestCancel(): void {
         <div class="progress-value" :class="[item.status, { indeterminate: item.status === 'downloading' && !hasProgress }]" :style="{ width: hasProgress ? `${progressPercent}%` : undefined }"></div>
       </div>
       <p class="progress-detail">{{ progressDetail }}</p>
-      <p v-if="item.outputPath" class="progress-detail output-path" :title="item.outputPath">Saved to {{ item.outputPath }}</p>
+      <p v-if="item.status === 'completed' && item.outputPath" class="progress-detail output-path" :title="item.outputPath">Saved to {{ item.outputPath }}</p>
+      <DownloadDiagnosticDetails v-if="item.status === 'failed' && item.diagnostic" :diagnostic="item.diagnostic" />
     </div>
     <div class="download-actions"><button v-if="item.status === 'queued' || item.status === 'downloading'" class="icon-button compact" type="button" @click="requestCancel">Cancel</button><span class="status-pill" :class="item.status" aria-live="polite">{{ statusText }}</span></div>
   </div>

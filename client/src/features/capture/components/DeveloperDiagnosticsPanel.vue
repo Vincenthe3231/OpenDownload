@@ -33,7 +33,7 @@ function handleChange(event: Event): void {
       <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
       <span class="switch-copy">
         <strong>{{ loading ? 'Updating diagnostics…' : enabled ? 'Technical detail is available' : 'Enable technical detail' }}</strong>
-        <small>Enable before starting or reconnecting capture. Sensitive request and response context stays in memory for this session only.</small>
+        <small>Enable before starting or reconnecting automatic capture. If you enable it during an active session, reconnect the extension before capturing a new request. Sensitive context stays in memory for this session only.</small>
       </span>
     </label>
 
