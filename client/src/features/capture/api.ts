@@ -1,5 +1,6 @@
 import { getAppBridge } from '../../shared/wails/app';
 import { parseTechnicalDiagnostic, type TechnicalDiagnostic } from '../../shared/diagnostics/technical';
+import { publishDeveloperDiagnosticsChange } from '../../shared/diagnostics/state';
 import { parseJobSnapshot } from '../downloads/api';
 import type { CapturedDownloadRequest, JobSnapshot } from '../downloads/types';
 import type {
@@ -184,6 +185,7 @@ export async function developerDiagnosticsEnabled(): Promise<boolean> {
 
 export async function setDeveloperDiagnostics(enabled: boolean): Promise<void> {
   await bridge().SetDeveloperDiagnostics(enabled);
+  publishDeveloperDiagnosticsChange(enabled);
 }
 
 export async function getTechnicalContext(streamID: string): Promise<TechnicalDiagnostic | null> {

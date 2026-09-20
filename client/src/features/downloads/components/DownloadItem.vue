@@ -27,7 +27,7 @@ function requestCancel(): void {
       </div>
       <p class="progress-detail">{{ progressDetail }}</p>
       <p v-if="item.status === 'completed' && item.outputPath" class="progress-detail output-path" :title="item.outputPath">Saved to {{ item.outputPath }}</p>
-      <DownloadDiagnosticDetails v-if="item.status === 'failed' && item.diagnostic" :diagnostic="item.diagnostic" />
+      <DownloadDiagnosticDetails v-if="item.status === 'failed' && item.diagnostic" :diagnostic="item.diagnostic" :filename="item.name" />
     </div>
     <div class="download-actions"><button v-if="item.status === 'queued' || item.status === 'downloading'" class="icon-button compact" type="button" @click="requestCancel">Cancel</button><span class="status-pill" :class="item.status" aria-live="polite">{{ statusText }}</span></div>
   </div>
